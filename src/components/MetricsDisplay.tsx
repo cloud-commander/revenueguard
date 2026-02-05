@@ -14,7 +14,7 @@ interface MetricsDisplayProps {
 
 export const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ metrics }) => {
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <MetricCard
         label="Requests"
         value={metrics.requests.toString()}

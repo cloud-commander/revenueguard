@@ -50,7 +50,7 @@ export const BookingPanel: React.FC<BookingPanelProps> = ({
                 : "D1 (SQLite) allows overbooking via race conditions."}
             </p>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 min-h-[44px]">
             <Label
               htmlFor="mode-toggle"
               className="text-xs uppercase font-bold text-muted-foreground"
