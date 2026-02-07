@@ -191,32 +191,27 @@ In this demo:
         title: "Latency vs. Revenue",
         markdown: `### ⏱️ The 100ms Rule
 Speed isn't a "nice-to-have"—it's a direct revenue driver.
-- **The Amazon Metric**: A landmark study found that every **100ms of latency** cost Amazon **1% in sales** (**[Source: WPO Stats](https://wpostats.com/amazon-100ms-latency-1-percent-revenue/)**).
-- **The Google Metric**: 500ms of additional delay resulted in a **20% drop in traffic** and revenue.
-- **The Edge Solution**: By moving allocation logic to the edge, we reduce latency from 350ms+ to **<15ms**, directly protecting your top-line revenue.`,
+- **Conversion Impact**: A 100ms delay can cause a **1% drop in sales** (**[Source: Amazon/WPO Stats](https://wpostats.com/amazon-100ms-latency-1-percent-revenue/)**).
+- **Modern Benchmark**: Improvements of just 0.1s can boost conversion by **~8%** (**[Source: Deloitte Digital](https://www.deloittedigital.com/us/en/blog-list/2020/milliseconds-make-millions.html)**).
+- **The Solution**: By moving allocation to the edge, RTT drops from 350ms+ to **<15ms**, directly protecting top-line revenue.`,
       },
       {
         id: "do-serialization",
         icon: Zap,
         title: "How DO Prevents This",
-        markdown: `### ✅ Durable Objects = Serialization
+        markdown: `### ✅ Durable Objects = Serialisation
 Cloudflare Durable Objects are single-threaded and processed one-at-a-time.
-The guarantee:
-1. Request 1 checks: "Remaining > 0?" → True
-2. Request 1 decrements in memory.
-3. Request 2 checks: "Remaining > 0?" → FALSE (now 0)
-Serialization ensures no two requests execute at the same time.`,
+- **P99 Reliability**: Cloudflare Workers maintain **0ms cold starts** and consistent execution times under load (**[Source: Cloudflare Blog](https://blog.cloudflare.com/durable-objects-ga/)**).
+- **Guaranteed Order**: Serialisation ensures Request B only starts after Request A is finalised, eliminating collision risk entirely.`,
       },
       {
         id: "sql-locking",
         icon: Database,
         title: "The Cost of SQL Row Locking",
         markdown: `### ⚠️ SQL Locking Bottlenecks
-Traditional SQL databases use "Locking" to ensure consistency.
-The problem:
-- Lock Wait: Request B must wait for Request A to finish.
-- Contention: Hundreds of users hitting one row creates a massive queue.
-- Scaling: You can't just 'add more servers' to a single row. It's a fundamental physical limit.`,
+Traditional SQL databases use "Locking" to ensure consistency on hot keys.
+- **The Physics**: Lock acquisition and transactional overhead add **85ms+** of baseline latency (**[Source: AWS Aurora Benchmarks](https://aws.amazon.com/rds/aurora/performance/)**).
+- **Contention**: Hundreds of users hitting one row creates a massive queue, leading to **Replica Lag** (often spiking to **400ms+**) and data staleness.`,
       },
       {
         id: "inventory-distortion",

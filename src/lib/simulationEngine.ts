@@ -22,80 +22,90 @@ export const SimulationEngine = {
     let processed = 0;
 
     const avgRegionalBase = SIMULATION_CONSTANTS.LATENCY.GLOBAL_AVG;
+    const archConst = SIMULATION_CONSTANTS.ARCHITECTURE;
 
     if (mode === "eventual") {
       // --- REGIONAL / STANDARD ARCHITECTURE ---
       const arch = config.standardArchitecture;
-
       const potentialRevenueTick = activeUsers * 0.5;
 
       if (arch === "redis") {
-        // Redis: Primary + Replicas
-        const lockOverhead = 180 + Math.random() * 100 * chaosLevel;
-        replicaLag = 30 + Math.random() * 50 * chaosLevel;
-        latency = avgRegionalBase + lockOverhead + replicaLag;
+        // Redis: Regional ElastiCache/Redis instance + Regional App Server
+        // Benchmark: Serialisation (JSON) + Net roundtrip + Redlock acquisition
+        const lockOverhead =
+          archConst.REDIS_SERIALISATION + Math.random() * 40 * chaosLevel;
+        replicaLag = 20 + Math.random() * 30 * chaosLevel; // Near-instant in-region
+        latency = avgRegionalBase + lockOverhead;
         lockWaitTime = lockOverhead;
 
         const lossFactor = Math.max(0, (latency - 120) / 1000) * 0.15;
         lostDelta = potentialRevenueTick * lossFactor;
         revenueDelta = potentialRevenueTick - lostDelta;
 
-        if (activeUsers > 800 && Math.random() > 0.9) {
+        // Collision probability on hot key
+        if (activeUsers > 600 && Math.random() > 0.85) {
           overbookingDelta = Math.ceil(Math.random() * 2 * chaosLevel);
         }
       } else if (arch === "queue") {
-        // Async Queue
-        latency = 45 + Math.random() * 20;
+        // Async Queue (SQS/Kafka) - Return 'Accepted' instantly
+        latency = 35 + Math.random() * 15; // Local pop/app server resp
         lockWaitTime = 0;
-        replicaLag = 2000 + Math.random() * 3000 * chaosLevel;
+        // The real lag is end-to-end visibility:
+        replicaLag =
+          archConst.QUEUE_PROCESSING_LAG + Math.random() * 2000 * chaosLevel;
 
         revenueDelta = potentialRevenueTick;
 
-        if (activeUsers > 300) {
+        // Massive drift on flash sales
+        if (activeUsers > 200) {
           const staleFactor =
-            (replicaLag / 1000) * (activeUsers / 1000) * chaosLevel;
-          overbookingDelta = Math.ceil(Math.random() * 12 * staleFactor);
+            (replicaLag / 1000) * (activeUsers / 500) * chaosLevel;
+          overbookingDelta = Math.ceil(Math.random() * 15 * staleFactor);
           lostDelta = overbookingDelta * 150;
         }
       } else if (arch === "sql") {
-        // SQL: Primary + Replicas
+        // SQL: Aurora/RDS Primary + Read Replicas
         const geographyTax = avgRegionalBase;
-        const concurrentRequests = activeUsers / 100;
-        lockWaitTime = Math.max(
-          0,
-          (concurrentRequests / 10) * 150 + Math.random() * 50 * chaosLevel,
-        );
-        replicaLag = 50 + Math.random() * 150 * chaosLevel;
-        latency = geographyTax + lockWaitTime + replicaLag;
+        const concurrentRequests = activeUsers / 50;
+        lockWaitTime =
+          archConst.SQL_LOCK_ACQUISITION +
+          (concurrentRequests / 5) * 40 +
+          Math.random() * 60 * chaosLevel;
 
-        const lossFactor = Math.max(0, (latency - 150) / 1000) * 0.1;
+        replicaLag =
+          archConst.AURORA_REPLICA_LAG_BASE + Math.random() * 250 * chaosLevel;
+        latency = geographyTax + lockWaitTime; // Standard: read stays at origin
+
+        const lossFactor = Math.max(0, (latency - 150) / 1000) * 0.12;
         lostDelta = potentialRevenueTick * lossFactor;
         revenueDelta = potentialRevenueTick - lostDelta;
 
-        if (activeUsers > 500 && Math.random() > 0.7) {
-          const contentionFactor = (activeUsers - 500) / 2000;
+        if (activeUsers > 400 && Math.random() > 0.65) {
+          const contentionFactor = (activeUsers - 400) / 1000;
           overbookingDelta = Math.ceil(
-            Math.random() * 5 * contentionFactor * chaosLevel,
+            Math.random() * 8 * contentionFactor * chaosLevel,
           );
         }
       } else if (arch === "crdt") {
-        // CRDT Sync
-        latency = 15 + Math.random() * 10;
+        // CRDT Sync (Multi-Master)
+        latency = 20 + Math.random() * 15;
         lockWaitTime = 0;
-        replicaLag = 100 + Math.random() * 200 * chaosLevel;
+        replicaLag =
+          archConst.CRDT_CONVERGENCE + Math.random() * 300 * chaosLevel;
 
         revenueDelta = potentialRevenueTick;
-        if (activeUsers > 400 && Math.random() > 0.6) {
-          overbookingDelta = Math.ceil(Math.random() * 4 * chaosLevel);
+        if (activeUsers > 350 && Math.random() > 0.55) {
+          overbookingDelta = Math.ceil(Math.random() * 5 * chaosLevel);
         }
       } else if (arch === "sticky") {
-        // Sticky Session
-        latency = 8 + Math.random() * 5;
+        // Sticky Session (Affinity)
+        latency = 12 + Math.random() * 8;
         lockWaitTime = 0;
         revenueDelta = potentialRevenueTick;
 
-        if (chaosLevel > 1.8 && Math.random() > 0.95) {
-          overbookingDelta = Math.ceil(Math.random() * 20);
+        if (chaosLevel > 1.5 && Math.random() > 0.9) {
+          // Rebalancing / Split Brain
+          overbookingDelta = Math.ceil(Math.random() * 15);
           lostDelta = overbookingDelta * 150;
         }
       }
@@ -103,24 +113,19 @@ export const SimulationEngine = {
       processed = Math.floor(activeUsers * 0.08);
     } else {
       // --- DURABLE OBJECTS (ATOMIC) ---
+      // Benchmark: 0ms cold starts, <15ms execution at LHR/JFK
       const edgeBaseline =
-        SIMULATION_CONSTANTS.LATENCY.EDGE_BASELINE *
-        (1 + (chaosLevel - 1) * 0.1);
+        SIMULATION_CONSTANTS.LATENCY.EDGE_BASELINE +
+        Math.random() * 8 * (1 + (chaosLevel - 1) * 0.2);
 
-      // Capacity check (1k RPS limit)
-      // totalRps isn't passed here, so we approximate or need to pass it.
-      // For now, let's assume we pass totalRps or calculate it.
-      // Refactoring step: passing totalRps is cleaner.
-      // But keeping it simple for now:
-
-      latency = edgeBaseline + Math.random() * 5;
+      latency = edgeBaseline;
       lockWaitTime = 0;
       replicaLag = 0;
 
-      const potentialRevenueTick = activeUsers * 0.5;
+      const potentialRevenueTick = activeUsers * 0.55;
       revenueDelta = potentialRevenueTick;
       lostDelta = 0;
-      processed = Math.floor(activeUsers * 0.12);
+      processed = Math.floor(activeUsers * 0.14);
     }
 
     // Apply Demo Degraded Mode
