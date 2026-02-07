@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Environment & Secrets
+.env
+.env.local
+.dev.vars
+.wrangler/
+.gemini/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,4 +29,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-docs

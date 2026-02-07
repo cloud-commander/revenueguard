@@ -1,0 +1,23 @@
+# Revenue Guard Robots File
+# Allows search engines to index the public demo
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://cf-peakpass.pages.dev/sitemap.xml
+
+# Common crawlers
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /

@@ -25,12 +25,15 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center">
           <Zap className="w-4 h-4 mr-2 text-yellow-500" />
-          Rush Simulation
+          Flash Sale Simulation
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex space-x-2">
           <div className="flex-1 space-y-2">
+            <label htmlFor="rush-count" className="sr-only">
+              Number of simulated purchases to run
+            </label>
             <Input
               id="rush-count"
               type="number"
@@ -48,7 +51,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
                     onClick={() => onSimulate(count)}
                     disabled={isSimulating}
                   >
-                    {isSimulating ? "Rushing..." : "Trigger Rush"}
+                    {isSimulating ? "Processing Deals..." : "Start Flash Sale"}
                   </Button>
                 </div>
               </TooltipTrigger>

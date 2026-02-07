@@ -47,7 +47,15 @@ const MetricCard = ({
   isError?: boolean;
 }) => (
   <Card
-    className={`bg-card/30 border-border/50 p-3 flex flex-col justify-between ${isError ? "border-destructive/50 bg-destructive/10" : ""}`}
+    className={`bg-card/30 border-border/50 p-3 flex flex-col justify-between transition-all ${isError ? "border-destructive/50 bg-destructive/10 cursor-pointer hover:bg-destructive/20 active:scale-95" : ""}`}
+    onClick={() => {
+      if (isError) {
+        console.warn(`[Metrics] Error state detected for ${label}: ${value}`);
+        alert(
+          `System Alert: ${label} threshold exceeded. Check worker logs for details.`,
+        );
+      }
+    }}
   >
     <div className="flex items-center justify-between mb-2">
       <span className="text-xs text-muted-foreground uppercase font-bold">

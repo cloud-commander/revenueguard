@@ -24,10 +24,11 @@ export const ContextualHelp = () => {
             </AccordionTrigger>
             <AccordionContent className="text-sm text-muted-foreground leading-relaxed">
               A race condition occurs when multiple requests attempt to read and
-              write the same data simultaneously. In our "Unsafe" path, two edge
-              nodes might both see 1 seat remaining, both approve a booking, and
-              then both write back to the database, resulting in an overbooked
-              class (Overflow).
+              A race condition occurs when multiple requests attempt to read and
+              write the same data simultaneously. In our "Eventual Consistency"
+              path, two edge nodes might both see 1 unit remaining, both approve
+              a booking, and then both write back to the database, resulting in
+              an overbooked class (Overflow).
             </AccordionContent>
           </AccordionItem>
 
@@ -46,14 +47,15 @@ export const ContextualHelp = () => {
 
           <AccordionItem value="d1-unsafe">
             <AccordionTrigger className="text-sm font-semibold hover:text-primary">
-              3. Why We Use D1 for the Unsafe Path
+              3. Why We Use D1 for the Eventual Path
             </AccordionTrigger>
             <AccordionContent className="text-sm text-muted-foreground leading-relaxed">
-              In this simulation, the "Unsafe" path mimics traditional stateless
-              requests hitting a distributed database (like D1 or Postgres)
-              without coordination. Even with ACID transactions, the
-              time-of-check to time-of-use (TOCTOU) gap at high concurrency
-              allows race conditions to slip through if not guarded by locks.
+              In this simulation, the "Eventual Consistency" path mimics
+              traditional stateless requests hitting a distributed database
+              (like D1 or Postgres) without strict coordination. Even with ACID
+              transactions, the time-of-check to time-of-use (TOCTOU) gap at
+              high concurrency allows race conditions to slip through if not
+              guarded by explicit serialization.
             </AccordionContent>
           </AccordionItem>
 

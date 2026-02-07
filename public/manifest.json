@@ -1,0 +1,78 @@
+{
+  "name": "Revenue Guard - Cloudflare Durable Objects Demo",
+  "short_name": "Revenue Guard",
+  "description": "Interactive demo showcasing atomic inventory allocation with Cloudflare Durable Objects, eliminating race conditions and providing hard-locked cost controls.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "categories": ["productivity", "education"],
+  "screenshots": [
+    {
+      "src": "/screenshots/screenshot-1.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/screenshots/screenshot-2.png",
+      "sizes": "1080x1440",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Demo",
+      "short_name": "Demo",
+      "description": "Launch the inventory allocation demo",
+      "url": "/?mode=demo",
+      "icons": [{ "src": "/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "View Documentation",
+      "short_name": "Docs",
+      "description": "Read the technical documentation",
+      "url": "/?view=docs",
+      "icons": [{ "src": "/icon-96.png", "sizes": "96x96" }]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

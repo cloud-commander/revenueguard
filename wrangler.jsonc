@@ -1,0 +1,92 @@
+{
+  "name": "cf-revenue-guard-worker",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2024-11-12",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REVENUE_GUARD_INVENTORY_DO",
+        "class_name": "InventoryGuard",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["InventoryGuard"],
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "REVENUE_GUARD_DB",
+      "database_name": "cf-revenue-guard-db-dev",
+      "database_id": "dev-local",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "REVENUE_GUARD_KV",
+      "id": "dev-local",
+      "preview_id": "dev-local",
+    },
+  ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "REVENUE_GUARD_AE",
+      "dataset": "cf_revenue_guard_events_dev",
+    },
+  ],
+  "vars": {
+    "BILLING_SCALE": "0.000000001",
+    "TURNSTILE_SECRET": "DEBUG_TOKEN",
+    "DEMO_COST_LIMIT": "1.0",
+    "ALERT_THRESHOLD": "0.0",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "env": {
+    "production": {
+      "name": "cf-revenue-guard-worker",
+      "d1_databases": [
+        {
+          "binding": "REVENUE_GUARD_DB",
+          "database_name": "cf-revenue-guard-db",
+          "database_id": "REPLACE_WITH_PRODUCTION_DB_ID",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "REVENUE_GUARD_KV",
+          "id": "REPLACE_WITH_PRODUCTION_KV_ID",
+          "preview_id": "REPLACE_WITH_PRODUCTION_KV_PREVIEW_ID",
+        },
+      ],
+      "analytics_engine_datasets": [
+        {
+          "binding": "REVENUE_GUARD_AE",
+          "dataset": "cf_revenue_guard_events",
+        },
+      ],
+      "vars": {
+        "BILLING_SCALE": "0.000000001",
+        "TURNSTILE_SECRET": "REPLACE_WITH_PRODUCTION_SECRET",
+        "DEMO_COST_LIMIT": "0.0",
+        "ALERT_THRESHOLD": "0.0",
+      },
+      "observability": {
+        "enabled": true,
+      },
+      "routes": [
+        {
+          "pattern": "revenue-guard.cfdemo.link/*",
+          "zone_name": "cfdemo.link",
+        },
+      ],
+    },
+  },
+}
