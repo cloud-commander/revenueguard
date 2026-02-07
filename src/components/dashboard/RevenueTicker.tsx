@@ -2,10 +2,90 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 
+interface RevenueChartProps {
+  history: { actual: number; potential: number }[];
+  mode: "eventual" | "safe";
+}
+
+const RevenueChart = ({ history, mode }: RevenueChartProps) => {
+  if (!history || history.length === 0) return null;
+
+  const maxVal = Math.max(...history.map((h) => h.potential), 10);
+  const width = 280;
+  const height = 40;
+  const padding = 2;
+
+  const pointsActual = history
+    .map((h, i) => {
+      const x = (i / (history.length - 1)) * width;
+      const y = height - (h.actual / maxVal) * (height - padding * 2) - padding;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  const pointsPotential = history
+    .map((h, i) => {
+      const x = (i / (history.length - 1)) * width;
+      const y =
+        height - (h.potential / maxVal) * (height - padding * 2) - padding;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="mt-6 w-full max-w-[280px] h-10 relative">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="overflow-visible"
+        preserveAspectRatio="none"
+      >
+        {/* Potential Revenue (Dashed) */}
+        <polyline
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeDasharray="3,3"
+          className="text-muted-foreground/30"
+          points={pointsPotential}
+        />
+        {/* Actual Revenue (Solid) */}
+        <motion.polyline
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={cn(
+            mode === "safe"
+              ? "text-[var(--color-status-success)]"
+              : "text-[var(--color-status-alert)]",
+          )}
+          points={pointsActual}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+        />
+      </svg>
+      <div className="flex justify-between mt-1 text-[8px] font-mono text-muted-foreground uppercase tracking-widest leading-none">
+        <span>60s Window</span>
+        <span
+          className={cn(
+            mode === "safe"
+              ? "text-[var(--color-status-success)]/80"
+              : "text-[var(--color-status-alert)]/80",
+          )}
+        >
+          {mode === "safe" ? "Atomic Delivery" : "Revenue Gap"}
+        </span>
+      </div>
+    </div>
+  );
+};
+
 interface RevenueTickerProps {
   value: number;
   mode: "eventual" | "safe";
   label?: string;
+  history?: { actual: number; potential: number }[];
 }
 
 const Digit = ({ value }: { value: string }) => {
@@ -32,10 +112,10 @@ export const RevenueTicker = ({
   value,
   mode,
   label = "Revenue Secured",
+  history = [],
 }: RevenueTickerProps) => {
   const [displayValue, setDisplayValue] = useState(value);
 
-  // Smooth catchup for big jumps (optional, keeping it simple for now)
   useEffect(() => {
     setDisplayValue(value);
   }, [value]);
@@ -47,14 +127,13 @@ export const RevenueTicker = ({
     maximumFractionDigits: 0,
   }).format(displayValue);
 
-  // Split into chars, keeping $ etc
   const chars = formatted.split("");
 
   return (
     <div className="flex flex-col items-center p-4">
       <div
         className={cn(
-          "text-xs font-bold uppercase tracking-widest mb-2 transition-colors duration-500",
+          "text-xs font-bold uppercase tracking-widest mb-3 transition-colors duration-500",
           mode === "safe"
             ? "text-[var(--color-status-success)]"
             : "text-[var(--color-status-alert)]",
@@ -62,11 +141,13 @@ export const RevenueTicker = ({
       >
         {label}
       </div>
-      <div className="flex gap-1">
+      <div className="flex gap-1 mb-2">
         {chars.map((char, i) => (
           <Digit key={`${i}-${char}`} value={char} />
         ))}
       </div>
+
+      <RevenueChart history={history} mode={mode} />
     </div>
   );
 };

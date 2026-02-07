@@ -33,6 +33,7 @@ interface MonitorViewProps {
     cumulativeSavings: number;
     telemetry: TelemetryEvent[];
     apiMode: "mock" | "live";
+    history: { actual: number; potential: number }[];
   };
 }
 
@@ -52,6 +53,7 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
     timestamp,
     error,
     apiMode,
+    history,
   } = state;
 
   const scenario = SCENARIOS[activeScenario] || SCENARIOS.auction;
@@ -146,6 +148,7 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
                 value={revenue}
                 mode={mode}
                 label={`${scenario.itemLabel}s ${scenario.actionLabel}`}
+                history={history}
               />
               <RevenueTicker
                 value={revenueLost}

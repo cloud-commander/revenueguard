@@ -42,6 +42,7 @@ interface SimulationState {
   config: SimulationConfig;
   activeScenario: ScenarioId;
   telemetry: TelemetryEvent[];
+  history: { actual: number; potential: number }[];
   isLive: boolean;
   session: SessionPayload | null;
   apiMode: "mock" | "live";
@@ -66,6 +67,7 @@ const INITIAL_STATE: SimulationState = {
   config: DEFAULT_CONFIG,
   activeScenario: "auction",
   telemetry: [],
+  history: Array(40).fill({ actual: 0, potential: 0 }),
   isLive: false,
   session: null,
   apiMode: "mock",
@@ -230,6 +232,28 @@ export function useSimulation() {
 
   const updateConfig = (newConfig: Partial<SimulationConfig>) => {
     lastInteractionRef.current = Date.now();
+
+    // Auto-reset on architecture change to ensure clean benchmark
+    if (
+      newConfig.standardArchitecture &&
+      newConfig.standardArchitecture !== configRef.current.standardArchitecture
+    ) {
+      console.info(
+        "[simulation] Architecture change detected. Resetting for clean benchmark.",
+      );
+      resetSimulation();
+      // After reset, we still want to apply the new config
+      setTimeout(() => {
+        const fullConfig = {
+          ...configRef.current,
+          ...newConfig,
+        } as SimulationConfig;
+        configRef.current = fullConfig;
+        setState((prev) => ({ ...prev, config: fullConfig }));
+      }, 0);
+      return;
+    }
+
     const fullConfig = {
       ...configRef.current,
       ...newConfig,
@@ -434,6 +458,13 @@ export function useSimulation() {
         telemetry: trimmedTelemetry,
         timestamp: Date.now(),
         config: config,
+        history: [
+          ...current.history.slice(1),
+          {
+            actual: results.revenueDelta,
+            potential: results.revenueDelta + results.lostDelta,
+          },
+        ],
       };
 
       stateRef.current = newState;

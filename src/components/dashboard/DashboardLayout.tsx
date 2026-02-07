@@ -90,6 +90,7 @@ interface DashboardLayoutProps {
     isLive: boolean;
     session: import("@/types").SessionPayload | null;
     apiMode: "mock" | "live";
+    history: { actual: number; potential: number }[];
   };
   onToggleMode: () => void;
   onToggleLive: () => void;
