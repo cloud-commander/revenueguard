@@ -148,20 +148,22 @@ export function useSimulation() {
 
     simulationApi.setApiMode(newMode);
 
-    // Force logout to ensure clean session state for the new mode
-    await simulationApi.logout();
+    // Refresh session from the new mode's storage
+    const response = await simulationApi.getCurrentSession();
+    const newSession = response.success ? response.data : null;
 
     stateRef.current = {
       ...stateRef.current,
       apiMode: newMode,
-      session: null,
-      isLive: false,
+      session: newSession as SessionPayload,
+      isLive: newMode === "live" && !!newSession,
     };
+
     setState((prev) => ({
       ...prev,
       apiMode: newMode,
-      session: null,
-      isLive: false,
+      session: newSession as SessionPayload,
+      isLive: newMode === "live" && !!newSession,
     }));
   };
 

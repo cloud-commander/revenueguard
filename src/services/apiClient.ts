@@ -18,9 +18,14 @@ class ApiClient {
     } as const;
   }
 
+  private getSessionKey(): string {
+    const mode = this.getApiMode();
+    return `demo-session-id-${mode}`;
+  }
+
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "";
-    this.sessionId = localStorage.getItem("demo-session-id");
+    this.initializeSession();
   }
 
   private isLive(): boolean {
@@ -34,6 +39,10 @@ class ApiClient {
    */
   setApiMode(mode: "mock" | "live"): void {
     localStorage.setItem("demo-api-mode", mode);
+    // When switching mode, we need to refresh the local sessionId from the new mode's storage
+    this.initializeSession();
+    // Sync mockApi if we have a session
+    mockApi.setSessionId(this.sessionId);
   }
 
   /**
@@ -47,19 +56,20 @@ class ApiClient {
    * Set the current session token (from login or localStorage)
    */
   setSessionToken(sessionId: string | null): void {
+    const key = this.getSessionKey();
     this.sessionId = sessionId;
     if (sessionId) {
-      localStorage.setItem("demo-session-id", sessionId);
+      localStorage.setItem(key, sessionId);
     } else {
-      localStorage.removeItem("demo-session-id");
+      localStorage.removeItem(key);
     }
   }
 
   /**
-   * Initialize session from local storage
+   * Initialize session from local storage based on current mode
    */
   initializeSession(): void {
-    this.sessionId = localStorage.getItem("demo-session-id");
+    this.sessionId = localStorage.getItem(this.getSessionKey());
   }
 
   async login(token: string, ipAddress: string): Promise<SessionResponse> {
@@ -76,9 +86,10 @@ class ApiClient {
     }
 
     if (response.success && response.data?.sessionId) {
-      this.sessionId = response.data.sessionId;
-      // Store in localStorage for persistence
-      localStorage.setItem("demo-session-id", response.data.sessionId);
+      this.setSessionToken(response.data.sessionId);
+      if (!this.isLive()) {
+        mockApi.setSessionId(response.data.sessionId);
+      }
     }
 
     return response;
@@ -96,8 +107,8 @@ class ApiClient {
       response = { success: true, meta: this.makeLocalMeta() };
     }
 
-    this.sessionId = null;
-    localStorage.removeItem("demo-session-id");
+    this.setSessionToken(null);
+    mockApi.setSessionId(null);
     return response;
   }
 
