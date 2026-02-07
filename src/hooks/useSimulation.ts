@@ -483,8 +483,15 @@ export function useSimulation() {
 
   const resetSimulation = () => {
     lastInteractionRef.current = Date.now();
-    stateRef.current = INITIAL_STATE;
-    setState(INITIAL_STATE);
+    const preservedState = {
+      ...INITIAL_STATE,
+      session: stateRef.current.session,
+      apiMode: stateRef.current.apiMode,
+      isLive: stateRef.current.isLive,
+      config: stateRef.current.config,
+    };
+    stateRef.current = preservedState;
+    setState(preservedState);
   };
 
   return {

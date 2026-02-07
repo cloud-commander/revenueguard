@@ -18,11 +18,6 @@ class ApiClient {
     } as const;
   }
 
-  private getSessionKey(): string {
-    const mode = this.getApiMode();
-    return `demo-session-id-${mode}`;
-  }
-
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "";
     this.initializeSession();
@@ -55,9 +50,14 @@ class ApiClient {
   /**
    * Set the current session token (from login or localStorage)
    */
-  setSessionToken(sessionId: string | null): void {
-    const key = this.getSessionKey();
-    this.sessionId = sessionId;
+  setSessionToken(sessionId: string | null, mode?: "mock" | "live"): void {
+    const targetMode = mode || this.getApiMode();
+    const key = `demo-session-id-${targetMode}`;
+
+    if (targetMode === this.getApiMode()) {
+      this.sessionId = sessionId;
+    }
+
     if (sessionId) {
       localStorage.setItem(key, sessionId);
     } else {
@@ -69,30 +69,40 @@ class ApiClient {
    * Initialize session from local storage based on current mode
    */
   initializeSession(): void {
-    this.sessionId = localStorage.getItem(this.getSessionKey());
+    const key = `demo-session-id-${this.getApiMode()}`;
+    this.sessionId = localStorage.getItem(key);
   }
 
   async login(token: string, ipAddress: string): Promise<SessionResponse> {
-    let response: SessionResponse;
+    const isCurrentlyLive = this.isLive();
 
-    if (this.isLive()) {
-      response = await this.request<SessionPayload>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ turnstileToken: token }),
-      });
-    } else {
-      // For mock, directly call mockApi
-      response = await mockApi.verifyToken(token, ipAddress);
+    const livePromise = this.request<SessionPayload>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ turnstileToken: token }),
+    }).catch(
+      (err) =>
+        ({
+          success: false,
+          error: { code: "LIVE_LOGIN_FAILED", message: String(err) },
+          meta: this.makeLocalMeta(),
+        }) as SessionResponse,
+    );
+
+    const mockPromise = mockApi.verifyToken(token, ipAddress);
+
+    const [liveRes, mockRes] = await Promise.all([livePromise, mockPromise]);
+
+    // Store sessions for both modes
+    if (liveRes.success && liveRes.data?.sessionId) {
+      this.setSessionToken(liveRes.data.sessionId, "live");
     }
 
-    if (response.success && response.data?.sessionId) {
-      this.setSessionToken(response.data.sessionId);
-      if (!this.isLive()) {
-        mockApi.setSessionId(response.data.sessionId);
-      }
+    if (mockRes.success && mockRes.data?.sessionId) {
+      this.setSessionToken(mockRes.data.sessionId, "mock");
+      mockApi.setSessionId(mockRes.data.sessionId);
     }
 
-    return response;
+    return isCurrentlyLive ? liveRes : mockRes;
   }
 
   async logout(): Promise<ApiResponse<void>> {
