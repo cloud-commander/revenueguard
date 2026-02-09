@@ -43,6 +43,9 @@ export const SIMULATION_LIMITS = {
   MAX_CONCURRENT_USERS: 100,
 } as const;
 
+export const DISABLE_LIVE_ENGINE =
+  import.meta.env.VITE_DISABLE_LIVE_ENGINE === "true";
+
 // --- SIMULATION PHYSICS CONSTANTS (BENCHMARK ALIGNED 2024/2025) ---
 export const SIMULATION_CONSTANTS = {
   // Regional Latency Bases (ms)

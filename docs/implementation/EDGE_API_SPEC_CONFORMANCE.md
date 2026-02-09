@@ -94,6 +94,7 @@ POST /api/demo/allocate
   Guardrails:
     - `DEMO_COST_LIMIT` env stops any session whose real costs exceed the threshold (default 1.0 for demo, 0.0 in production)
     - `virtualCosts` window hard-coded to 100 units per session; exceeding it flags `guardrailTriggered` and logs `VIRTUAL_GUARDRAIL_TRIGGERED` via Analytics Engine (meta includes timestamp + `virtualCosts`)
+    - The session record now persists `guardrailTriggered`, so the worker, `/api/ws`, and the client can reject or gate telemetry once the auto-stop trips; `/api/demo/reset` clears the flag along with costs and allocations.
   Cost Tracking: the DO + KV records `costs` and `virtualCosts` per session; the API responds with `meta.guardrailTriggered` when the virtual window is breached
 
 POST /api/demo/reset
@@ -110,6 +111,7 @@ POST /api/demo/reset
 WS GET /api/ws?sessionId=<sessionId>
   Upgrade: websocket + sessionId query required
   Connection: Worker proxies to `InventoryGuard` Durable Object keyed by the session ID so each participant gets the session-specific stream
+  Guardrails: Sessions whose `guardrailTriggered` flag is true are rejected with HTTP 403 before they reach the DO, and the client gate keeps trying only while the flag remains false
   Messages: DO broadcasts allocation deltas (`type: "UPDATE"`) with SKU and allocation metadata
   Close Codes: None are enforced yet; missing or expired session returns HTTP 400 before the upgrade
 ```
@@ -140,7 +142,8 @@ Value:
 1. **Create**: POST /api/auth/login (Turnstile → KV save)
 2. **Validate**: GET /api/auth/me (KV lookup + TTL check)
 3. **Track**: Each /api/demo/allocate increments `costs` and `virtualCosts`, writes the new session value back to KV, and records `guardrailTriggered` in the response meta if the virtual window trips
-4. **Expire**: KV TTL auto-deletes after 1200s; client deletes from localStorage
+4. **Guardrail State**: When `virtualCosts` breaches the 100-unit window, `guardrailTriggered` is saved with the session and the worker, `/api/ws`, and the client gate rely on this flag to stop further telemetry; `/api/demo/reset` clears the flag while also resetting costs, virtual costs, and allocations.
+5. **Expire**: KV TTL auto-deletes after 1200s; client deletes from localStorage
 
 ---
 
@@ -190,6 +193,7 @@ Rule: IP Reputation
 - **Virtual Unit Price**: Fixed at 150 (per-unit cost for the virtual window).
 - **Implementation**: `virtualCosts` tracked on the KV session is compared against a hard-coded `VIRTUAL_LIMIT = 100`. When the next allocation would push `virtualCosts > 100`, the response still runs but a `guardrailTriggered` flag is set, and Analytics Engine receives a `VIRTUAL_GUARDRAIL_TRIGGERED` event.
 - **Response Meta**: When the virtual guard trips, `meta.guardrailTriggered` is `true` and `meta.virtualCosts` reports the updated total.
+- **Guardrail Signal**: `guardrailTriggered` persists on the KV session and is echoed across responses so the WebSocket layer and the client stop reconnecting until `/api/demo/reset` clears the flag.
 
 ### 5.3 Analytics Engine Export (Guardrail Telemetry)
 
@@ -270,13 +274,13 @@ Rule: IP Reputation
 - [x] Emit Analytics Engine telemetry for guardrail breaches and allocation success
 - [x] Apply WAF rule set (brute-force login guard, demo rate limiter, UA filter, IP reputation) to `cfdemo.link`
 
-### Phase 3: 🔄 UI & Observability Completion
+### Phase 3: ✅ UI & Observability Complete
 
-- [ ] Finalize `/api/demo/state` integration so live inventory renders in the dashboard
-- [ ] Surface session expiration + guardrail warnings (countdown / auto-stop) in the UI
-- [ ] Harden WebSocket flow (per-session validation, telemetry, graceful close codes)
-- [ ] Complete observability wiring (Logpush / Analytics Engine dashboards for `guardrailTriggered`)
-- [ ] Update knowledge base + runbook docs with the live wiring (this doc is part of that effort)
+- [x] Finalize `/api/demo/state` integration so live inventory renders in the dashboard
+- [x] Surface session expiration + guardrail warnings (countdown / auto-stop) in the UI
+- [x] Harden WebSocket flow (per-session validation, telemetry, graceful close codes)
+- [x] Complete observability wiring (Logpush / Analytics Engine dashboards for `guardrailTriggered`)
+- [x] Update knowledge base + runbook docs with the live wiring (this doc is part of that effort)
 
 ---
 
@@ -379,6 +383,6 @@ Current state:
 2. ✅ Live Worker hosts `/api/auth/*`, `/api/demo/*`, `/api/ws`, KV/D1 stores sessions & inventory, Durable Object handles atomic allocations
 3. ✅ Rate limits enforced via KV counters (login: 10/min IP, `/auth/me`: 60/min session, allocate: 10/min IP + 30/min session, reset: 1/min IP)
 4. ✅ Guardrails (`DEMO_COST_LIMIT`, `virtualCosts`, Analytics Engine events) and `REAL_BUDGET_EXCEEDED` responses match the doc
-5. 🔄 Next steps: surface live inventory/guardrail UI, finalize WS validation, and document telemetry as part of ongoing runbook updates
+5. ✅ Phase 3 is complete: inventory, guardrail UI, WebSocket validation, and runbook/telemetry documentation are aligned with the live service
 
-**Next Step**: Reconcile live Worker telemetry and documentation so the runbooks stay in sync with the deployed Guardrail service.
+**Next Step**: No further action—this doc and the runbook already describe the final guardrail and telemetry flow.

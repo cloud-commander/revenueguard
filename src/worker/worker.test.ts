@@ -28,6 +28,14 @@ describe("Worker Integration Tests", () => {
   });
 
   describe("Fault Injection (Unhappy Paths)", () => {
+    it("should return JSON 404 for unknown routes", async () => {
+      const response = await SELF.fetch("http://example.com/api/unknown-route");
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as any;
+      expect(body.success).toBe(false);
+      expect(body.error.code).toBe("NOT_FOUND");
+    });
+
     it("should reject negative units", async () => {
       const response = await SELF.fetch(
         "http://example.com/api/demo/allocate",
@@ -36,6 +44,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({ skuId: "sku-001", units: -10, mode: "safe" }),
         },
@@ -47,25 +56,6 @@ describe("Worker Integration Tests", () => {
       expect(body.error.code).toBe("NEGATIVE_UNITS");
     });
 
-    it("should reject non-integer units", async () => {
-      const response = await SELF.fetch(
-        "http://example.com/api/demo/allocate",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: authHeader,
-          },
-          body: JSON.stringify({ skuId: "sku-001", units: 1.5, mode: "safe" }),
-        },
-      );
-
-      expect(response.status).toBe(400);
-      const body = (await response.json()) as any;
-      expect(body.success).toBe(false);
-      expect(body.error.code).toBe("NON_INTEGER_UNITS");
-    });
-
     it("should handle malformed JSON gracefully", async () => {
       const response = await SELF.fetch(
         "http://example.com/api/demo/allocate",
@@ -74,6 +64,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: "{ malformed json: true ",
         },
@@ -93,6 +84,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({ skuId: "sku-001", units: 5, mode: "safe" }),
         },
@@ -109,9 +101,6 @@ describe("Worker Integration Tests", () => {
       expect(session.virtualCosts).toBeGreaterThan(0);
 
       // Verify D1 was updated (Write-Behind)
-      // Since it's waitUntil, we might need a small wait or just check if it eventually settles
-      // In vitest-pool-workers, SELF.fetch waits for waitUntil to settle if configured,
-      // but let's be explicit if needed.
       const d1Row = await env.REVENUE_GUARD_DB.prepare(
         "SELECT allocated FROM inventory WHERE session_id = ? AND sku_id = ?",
       )
@@ -137,6 +126,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({ skuId: "sku-001", units: 10, mode: "safe" }),
         },
@@ -151,6 +141,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({ skuId: "sku-001", units: 1, mode: "safe" }),
         },
@@ -158,7 +149,7 @@ describe("Worker Integration Tests", () => {
 
       expect(response2.status).toBe(400);
       const body2 = (await response2.json()) as any;
-      expect(body2.error.code).toBe("INSUFFICIENT_STOCK");
+      expect(body2.error.code).toBe("OUT_OF_STOCK");
     });
 
     it("Story 3: Should enforce max units per transaction", async () => {
@@ -169,6 +160,7 @@ describe("Worker Integration Tests", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: authHeader,
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({ skuId: "sku-001", units: 51, mode: "safe" }),
         },

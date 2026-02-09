@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: "/"
+    reviewers:
+      - "georgediavatis"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      # Add any packages to ignore here
+      - dependency-name: "@cloudflare/types"
+        versions: ["*"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5

@@ -29,11 +29,30 @@ Compare Cloudflare's atomic architecture against common industry patterns. The s
 
 ### 3. Production-Grade Safety & Testing
 
-- **Comprehensive Validation**: 39+ tests ensuring 100% logic integrity across edge runtimes (Vitest + Cloudflare Vitest Pool).
-- **Proactive Guardrails**: Multi-layered protection including per-IP rate limits (10 req/min) and per-session limits (30 req/min).
+- [x] **Comprehensive Validation**: 39+ tests ensuring 100% logic integrity across edge runtimes.
+- [x] **Proactive Guardrails**: Per-IP (10/min) and Per-Session (30/min) rate limiting.
+- [x] **Kill-Switch**: `VITE_DISABLE_LIVE_ENGINE=true` completely bypasses the Worker layer for restricted environments.
 - **Virtual Billing**: Real billing events are scaled by `1e-4` (simulated nominal costs).
 - **Hard Budget Stop**: Server-side guardrails halt the demo if simulated traffic exceeds **1,000,000 requests**.
 - **Session Isolation**: Every demo user gets a unique namespaced environment (Isolated D1 & DOs), preventing cross-user collisions.
+
+### 4. Dynamic Quota Scaling (24/7 Cost Control)
+
+Automatically throttle operations as Cloudflare Workers CPU quota depletes, preventing budget overages on the $5/month plan:
+
+- **Real-Time Monitoring**: Track cumulative CPU consumption across the month (30M CPU-ms budget).
+- **Adaptive Rate Limits**: Gracefully degrade from full speed → slow (50% quota) → critical (80%) → mock-only (100%).
+- **Live Dashboard**: QuotaMonitor widget displays throttle level, remaining budget, and operator warnings.
+- **Mock Fallback**: When quota is exhausted, automatically switch to client-side mock engine for continuous testing.
+- **Fully Configurable**: Override CPU budgets and thresholds via environment variables for different deployment scenarios.
+
+**Key Metrics**:
+
+- **1 session, 24/7**: ~7–8% CPU consumption ✅
+- **3 sessions, 24/7**: ~19–22% CPU consumption ✅
+- Recommended max concurrent sessions: **3** (above this, risk rapid budget depletion)
+
+👉 See [**QUOTA_SCALING.md**](docs/implementation/QUOTA_SCALING.md) for full architecture and future enhancements (regional failover, webhook alerts, historical trending).
 
 ---
 

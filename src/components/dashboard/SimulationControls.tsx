@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SimulationConfig } from "@/config/simulationDefaults";
-import { SIMULATION_LIMITS } from "@/config/simulationDefaults";
+
 import { SCENARIOS } from "@/config/scenarios";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ interface SimulationControlsProps {
   onUpdate: (config: Partial<SimulationConfig>) => void;
   activeScenario: string;
   onScenarioChange: (id: string) => void;
-  totalRequests: number;
+
   onResetSimulation: () => void;
   touchInteraction?: () => void;
 }
@@ -41,7 +41,7 @@ export const SimulationControls = ({
   onUpdate,
   activeScenario,
   onScenarioChange,
-  totalRequests,
+
   onResetSimulation,
   touchInteraction,
 }: SimulationControlsProps) => {
@@ -252,7 +252,23 @@ export const SimulationControls = ({
         {/* Chaos Level */}
         <div className="space-y-2">
           <div className="flex justify-between items-center text-[10px] font-mono text-muted-foreground">
-            <span>Chaos Factor (Randomness)</span>
+            <div className="flex items-center gap-1.5">
+              <span>Chaos Factor (Randomness)</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button className="text-muted-foreground hover:text-foreground transition-colors p-0.5">
+                    <Info className="w-3 h-3" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  className="max-w-[200px] text-[10px] leading-relaxed"
+                >
+                  Higher chaos levels simulate inconsistent network conditions
+                  and extreme burst patterns.
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <span className="text-foreground font-bold">
               x{config.chaosLevel.toFixed(1)}
             </span>
@@ -357,61 +373,6 @@ export const SimulationControls = ({
       </div>
 
       <div className="space-y-4 px-1 pb-2">
-        {/* Allowance Consumption */}
-        <div className="space-y-2 pt-4 border-t border-border">
-          <div className="flex justify-between items-center text-[10px] font-mono text-muted-foreground">
-            <span className="flex items-center gap-2">
-              <Activity className="w-3 h-3 text-blue-500" />
-              Allowance Consumption
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="px-1.5 py-0.5 rounded-full bg-[var(--color-status-success)]/10 text-[var(--color-status-success)] text-[8px] font-bold border border-[var(--color-status-success)]/20 uppercase tracking-tighter">
-                Cost Efficient Scale
-              </span>
-              <span
-                className={cn(
-                  "font-bold",
-                  totalRequests >= SIMULATION_LIMITS.HARD_LIMIT
-                    ? "text-destructive"
-                    : totalRequests >= SIMULATION_LIMITS.ALERT
-                      ? "text-orange-500"
-                      : "text-foreground",
-                )}
-              >
-                {Math.min(
-                  100,
-                  (totalRequests / SIMULATION_LIMITS.HARD_LIMIT) * 100,
-                ).toFixed(1)}
-                %
-              </span>
-            </div>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div
-              className={cn(
-                "h-full transition-all duration-500",
-                totalRequests >= SIMULATION_LIMITS.HARD_LIMIT
-                  ? "bg-destructive"
-                  : totalRequests >= SIMULATION_LIMITS.ALERT
-                    ? "bg-orange-500"
-                    : "bg-[var(--color-status-success)]",
-              )}
-              style={{
-                width: `${Math.min(100, (totalRequests / SIMULATION_LIMITS.HARD_LIMIT) * 100)}%`,
-              }}
-            />
-          </div>
-          <div className="flex justify-between text-[8px] font-mono text-muted-foreground uppercase tracking-widest opacity-60">
-            <span>0</span>
-            <span>
-              {(SIMULATION_LIMITS.ALERT / 1000000).toFixed(2)}M (Alert)
-            </span>
-            <span>
-              {(SIMULATION_LIMITS.HARD_LIMIT / 1000000).toFixed(2)}M (Halt)
-            </span>
-          </div>
-        </div>
-
         {/* Global Reset */}
         <Button
           variant="outline"
@@ -457,14 +418,6 @@ export const SimulationControls = ({
             </TooltipContent>
           </Tooltip>
         </div>
-      </div>
-
-      <div className="bg-card p-4 rounded-xl border border-border flex items-start gap-3">
-        <RefreshCcw className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-        <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-          Higher chaos levels simulate inconsistent network conditions and
-          extreme burst patterns.
-        </p>
       </div>
     </div>
   );

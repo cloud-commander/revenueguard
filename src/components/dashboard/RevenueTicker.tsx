@@ -33,7 +33,7 @@ const RevenueChart = ({ history, mode }: RevenueChartProps) => {
     .join(" ");
 
   return (
-    <div className="mt-6 w-full max-w-[280px] h-10 relative">
+    <div className="mt-3 w-full max-w-[280px] h-10 relative">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="overflow-visible"
@@ -90,7 +90,7 @@ interface RevenueTickerProps {
 
 const Digit = ({ value }: { value: string }) => {
   return (
-    <div className="relative w-6 h-10 md:w-8 md:h-12 bg-card rounded-lg overflow-hidden border border-border shadow-lg shadow-black/10 dark:shadow-black/50 shrink-0">
+    <div className="relative w-5 h-8 md:w-6 md:h-10 bg-card rounded-lg overflow-hidden border border-border shadow-lg shadow-black/10 dark:shadow-black/50 shrink-0">
       <AnimatePresence mode="popLayout">
         <motion.div
           key={value}
@@ -98,7 +98,7 @@ const Digit = ({ value }: { value: string }) => {
           animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
           exit={{ y: 20, opacity: 0, filter: "blur(4px)" }}
           transition={{ duration: 0.15, ease: "circOut" }}
-          className="absolute inset-0 flex items-center justify-center text-2xl font-mono font-bold text-card-foreground"
+          className="absolute inset-0 flex items-center justify-center text-lg md:text-xl font-mono font-bold text-card-foreground"
         >
           {value}
         </motion.div>
@@ -130,10 +130,10 @@ export const RevenueTicker = ({
   const chars = formatted.split("");
 
   return (
-    <div className="flex flex-col items-center p-4">
+    <div className="flex flex-col items-center p-2">
       <div
         className={cn(
-          "text-xs font-bold uppercase tracking-widest mb-3 transition-colors duration-500",
+          "text-xs font-bold uppercase tracking-widest mb-1 transition-colors duration-500",
           mode === "safe"
             ? "text-[var(--color-status-success)]"
             : "text-[var(--color-status-alert)]",

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { SimulationMode } from "@/hooks/useSimulation";
 import type { SimulationConfig } from "@/config/simulationDefaults";
+import type { InventoryItem, QuotaStatus, ThrottleLevel } from "@/types";
+import { DISABLE_LIVE_ENGINE } from "@/config/simulationDefaults";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -8,16 +10,13 @@ import { Sidebar, type ViewState } from "@/components/layout/Sidebar";
 import { ControlPanel } from "@/components/layout/ControlPanel";
 import { KnowledgeBase } from "@/components/views/KnowledgeBase";
 import { MonitorView } from "@/components/views/MonitorView";
-import { Menu, SlidersHorizontal, ShieldCheck } from "lucide-react";
+import { SessionStatusView } from "@/components/views/SessionStatusView";
+import { LegalDisclaimer } from "@/components/views/LegalDisclaimer";
+import { Menu, SlidersHorizontal, Info } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"; // For Mobile Nav
 import { Button } from "@/components/ui/button";
 import { TelemetryView } from "@/components/views/TelemetryView";
 import { type TelemetryEvent } from "@/hooks/useSimulation";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 // --- Components ---
 
@@ -89,8 +88,14 @@ interface DashboardLayoutProps {
     overbookingCost: number;
     isLive: boolean;
     session: import("@/types").SessionPayload | null;
+    guardrailTriggered: boolean;
     apiMode: "mock" | "live";
     history: { actual: number; potential: number }[];
+    inventorySnapshot: InventoryItem[];
+    inventoryLoading: boolean;
+    inventoryError: string | null;
+    quotaStatus: QuotaStatus | null;
+    throttleLevel: ThrottleLevel;
   };
   onToggleMode: () => void;
   onToggleLive: () => void;
@@ -119,6 +124,7 @@ export const DashboardLayout = ({
   const [currentView, setCurrentView] = useState<ViewState>("monitor");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [legalDisclaimerOpen, setLegalDisclaimerOpen] = useState(false);
 
   return (
     <div
@@ -137,6 +143,7 @@ export const DashboardLayout = ({
           apiMode={state.apiMode}
           onToggleApiMode={onToggleApiMode}
           onLogout={onLogout}
+          onLegalClick={() => setLegalDisclaimerOpen(true)}
         />
       </div>
 
@@ -162,36 +169,50 @@ export const DashboardLayout = ({
                   apiMode={state.apiMode}
                   onToggleApiMode={onToggleApiMode}
                   onLogout={onLogout}
+                  onLegalClick={() => setLegalDisclaimerOpen(true)}
                 />
               </SheetContent>
             </Sheet>
           </div>
 
+          {/* Source Badge (Desktop/Tablet) */}
+          <div className="hidden md:flex items-center gap-2 text-[10px] font-mono text-muted-foreground bg-muted/40 border border-border rounded-xl px-3 py-1.5 transition-colors ml-4">
+            <Info className="w-3 h-3 text-[var(--color-status-success)]" />
+            <span>
+              Source:{" "}
+              {state.apiMode === "live"
+                ? "Live Worker (Real Telemetry)"
+                : "Mock Engine (Client-side)"}
+            </span>
+          </div>
+
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
-            <button
-              onClick={() => {
-                touchInteraction?.();
-                onToggleApiMode();
-              }}
-              className={cn(
-                "h-10 px-3 md:px-4 rounded-full border p-1 flex items-center cursor-pointer transition-all duration-300 shadow-sm gap-2",
-                state.apiMode === "live"
-                  ? "bg-[var(--color-engine-accent)]/10 border-[var(--color-engine-accent)]/50 text-[var(--color-engine-accent)]"
-                  : "bg-muted border-border text-muted-foreground hover:border-foreground/20",
-              )}
-            >
-              <div
+            {!DISABLE_LIVE_ENGINE && (
+              <button
+                onClick={() => {
+                  touchInteraction?.();
+                  onToggleApiMode();
+                }}
                 className={cn(
-                  "w-1.5 h-1.5 rounded-full",
+                  "h-10 px-3 md:px-4 rounded-full border p-1 flex items-center cursor-pointer transition-all duration-300 shadow-sm gap-2",
                   state.apiMode === "live"
-                    ? "bg-[var(--color-engine-accent)] animate-pulse shadow-[0_0_8px_var(--color-engine-accent)]"
-                    : "bg-muted-foreground/30",
+                    ? "bg-[var(--color-engine-accent)]/10 border-[var(--color-engine-accent)]/50 text-[var(--color-engine-accent)]"
+                    : "bg-muted border-border text-muted-foreground hover:border-foreground/20",
                 )}
-              />
-              <span className="text-[10px] font-bold uppercase tracking-wider">
-                {state.apiMode === "live" ? "Live Worker" : "Mock Engine"}
-              </span>
-            </button>
+              >
+                <div
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    state.apiMode === "live"
+                      ? "bg-[var(--color-engine-accent)] animate-pulse shadow-[0_0_8px_var(--color-engine-accent)]"
+                      : "bg-muted-foreground/30",
+                  )}
+                />
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  {state.apiMode === "live" ? "Live Worker" : "Mock Engine"}
+                </span>
+              </button>
+            )}
             <ModeToggle
               mode={mode}
               onToggle={() => {
@@ -199,18 +220,6 @@ export const DashboardLayout = ({
                 onToggleMode();
               }}
             />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full border border-[var(--color-status-success)]/30 bg-[var(--color-status-success)]/5 text-[10px] font-mono text-[var(--color-status-success)] cursor-help transition-colors hover:bg-[var(--color-status-success)]/10">
-                  <ShieldCheck className="w-3 h-3" />
-                  Enterprise Guardrail
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-[10px] font-mono">
-                Operational Precision: 1e-9 Billing Accuracy · Alert ~5% ·
-                Auto-halt ~10%
-              </TooltipContent>
-            </Tooltip>
             <ThemeToggle />
 
             {/* Mobile Controls Trigger */}
@@ -230,6 +239,8 @@ export const DashboardLayout = ({
           <div className="max-w-7xl mx-auto">
             {currentView === "monitor" ? (
               <MonitorView state={state} />
+            ) : currentView === "session" ? (
+              <SessionStatusView state={state} />
             ) : currentView === "telemetry" ? (
               <TelemetryView
                 telemetry={state.telemetry}
@@ -251,11 +262,16 @@ export const DashboardLayout = ({
         onUpdate={onUpdateConfig}
         activeScenario={activeScenario}
         onScenarioChange={onScenarioChange}
-        totalRequests={state.totalRequests}
         onResetSimulation={onResetSimulation}
         touchInteraction={touchInteraction}
         mobileOpen={mobileControlsOpen}
         onMobileOpenChange={setMobileControlsOpen}
+      />
+
+      {/* Legal Disclaimer Modal */}
+      <LegalDisclaimer
+        open={legalDisclaimerOpen}
+        onOpenChange={setLegalDisclaimerOpen}
       />
     </div>
   );

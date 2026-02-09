@@ -14,7 +14,7 @@ interface ControlPanelProps {
   onUpdate: (config: Partial<SimulationConfig>) => void;
   activeScenario: string;
   onScenarioChange: (id: string) => void;
-  totalRequests: number;
+
   onResetSimulation: () => void;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -27,7 +27,7 @@ export const ControlPanel = ({
   onUpdate,
   activeScenario,
   onScenarioChange,
-  totalRequests,
+
   onResetSimulation,
   mobileOpen,
   onMobileOpenChange,
@@ -42,7 +42,6 @@ export const ControlPanel = ({
           onUpdate={onUpdate}
           activeScenario={activeScenario}
           onScenarioChange={onScenarioChange}
-          totalRequests={totalRequests}
           onResetSimulation={onResetSimulation}
           touchInteraction={touchInteraction}
         />

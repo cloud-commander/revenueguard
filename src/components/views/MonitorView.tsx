@@ -1,15 +1,23 @@
-import { RevenueTicker } from "../dashboard/RevenueTicker";
+import { CompactRevenueStat } from "../dashboard/CompactRevenueStat";
 import { ContentionGrid } from "../dashboard/ContentionGrid";
 import { SystemHealth } from "../dashboard/SystemHealth";
 import { ConflictLog } from "../dashboard/ConflictLog";
 import { SimulationNarrative } from "../dashboard/SimulationNarrative";
 import { EdgePresence } from "../dashboard/EdgePresence";
 import { PerformanceMaths } from "../dashboard/PerformanceMaths";
+import { InventorySnapshot } from "../dashboard/InventorySnapshot";
+import { AlertCenter } from "../dashboard/AlertCenter";
 import { SCENARIOS } from "@/config/scenarios";
 import type { SimulationMode } from "@/hooks/useSimulation";
 import type { SimulationConfig } from "@/config/simulationDefaults";
+import type {
+  InventoryItem,
+  SessionPayload,
+  QuotaStatus,
+  ThrottleLevel,
+} from "@/types";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Info, ShieldCheck } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { type TelemetryEvent } from "@/hooks/useSimulation";
 import { SIMULATION_LIMITS } from "@/config/simulationDefaults";
 import { cn } from "@/lib/utils";
@@ -34,6 +42,14 @@ interface MonitorViewProps {
     telemetry: TelemetryEvent[];
     apiMode: "mock" | "live";
     history: { actual: number; potential: number }[];
+    inventorySnapshot: InventoryItem[];
+    inventoryLoading: boolean;
+    inventoryError: string | null;
+    guardrailTriggered: boolean;
+    session: SessionPayload | null;
+    quotaStatus: QuotaStatus | null;
+    throttleLevel: ThrottleLevel;
+    isLive: boolean;
   };
 }
 
@@ -54,30 +70,27 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
     error,
     apiMode,
     history,
+    inventorySnapshot,
+    inventoryLoading,
+    inventoryError,
+    guardrailTriggered,
+    session,
+    quotaStatus,
+    throttleLevel,
   } = state;
 
   const scenario = SCENARIOS[activeScenario] || SCENARIOS.auction;
 
   return (
     <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground bg-muted/40 border border-border rounded-xl px-3 py-1.5 transition-colors">
-          <Info className="w-3 h-3 text-[var(--color-status-success)]" />
-          <span className="hidden sm:inline">
-            Source:{" "}
-            {apiMode === "live"
-              ? "Live Worker (Real Telemetry)"
-              : "Mock Engine (Client-side)"}
-          </span>
-          <span className="sm:hidden text-[9px]">
-            {apiMode === "live" ? "Live Worker" : "Mock Data"}
-          </span>
-        </div>
-        <div className="flex lg:hidden items-center gap-2 text-[9px] font-mono text-muted-foreground bg-[var(--color-status-alert)]/5 border border-[var(--color-status-alert)]/20 rounded-xl px-3 py-1.5">
-          <ShieldCheck className="w-3 h-3 text-[var(--color-status-alert)]" />
-          Auto-stop ~10%
-        </div>
-      </div>
+      {/* Alert Center - Surface all warnings and guardrail issues */}
+      <AlertCenter
+        guardrailTriggered={guardrailTriggered}
+        session={session}
+        quotaStatus={quotaStatus}
+        throttleLevel={throttleLevel}
+        apiMode={apiMode}
+      />
 
       {error && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 backdrop-blur-md p-6">
@@ -124,7 +137,7 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
       )}
 
       {/* Top Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4">
         {/* Main Ticker */}
         <Card
           className={cn(
@@ -143,18 +156,24 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
                   : "from-white/5 to-transparent",
               )}
             />
-            <div className="flex flex-col gap-4">
-              <RevenueTicker
-                value={revenue}
-                mode={mode}
-                label={`${scenario.itemLabel}s ${scenario.actionLabel}`}
-                history={history}
-              />
-              <RevenueTicker
-                value={revenueLost}
-                mode="eventual"
-                label="Revenue at Risk"
-              />
+            <div className="space-y-3">
+              <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Revenue Metrics
+              </h2>
+              <div className="flex flex-col gap-2">
+                <CompactRevenueStat
+                  value={revenue}
+                  mode={mode}
+                  label={`${scenario.itemLabel}s ${scenario.actionLabel}`}
+                  history={history}
+                  showChart={true}
+                />
+                <CompactRevenueStat
+                  value={revenueLost}
+                  mode="eventual"
+                  label="Revenue at Risk"
+                />
+              </div>
             </div>
             <AnimatePresence>
               {mode === "safe" && cumulativeSavings > 0 && (
@@ -177,7 +196,7 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
           </CardContent>
         </Card>
 
-        {/* Narrative / Context */}
+        {/* Narrative + System Metrics */}
         <div className="lg:col-span-4 flex flex-col gap-4">
           <div className="flex-1">
             <SimulationNarrative
@@ -189,18 +208,18 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
               error={error}
             />
           </div>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-[500px]">
-        {/* Left: System Health & Edge Presence */}
-        <div className="lg:col-span-4 space-y-6">
           <SystemHealth
             latency={latency}
             lockWaitTime={lockWaitTime}
             mode={mode}
           />
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full min-h-[400px]">
+        {/* Left: Performance & Presence */}
+        <div className="lg:col-span-4 space-y-4">
           <PerformanceMaths
             sessions={activeUsers}
             skus={config.skuCount}
@@ -211,10 +230,23 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
             replicaLag={state.replicaLag}
           />
           <EdgePresence mode={mode} />
+          <div className="h-[200px]">
+            <ConflictLog
+              mode={mode}
+              transactions={transactionsProcessed}
+              activeScenario={activeScenario}
+            />
+          </div>
         </div>
 
         {/* Centre/Right: The Grid */}
-        <div className="lg:col-span-8 flex flex-col gap-4">
+        <div className="lg:col-span-8 flex flex-col gap-3">
+          <InventorySnapshot
+            inventory={inventorySnapshot}
+            loading={inventoryLoading}
+            error={inventoryError}
+            apiMode={apiMode}
+          />
           <div className="flex justify-between items-end">
             <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
               Global Inventory Contention
@@ -242,14 +274,6 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
               />
             </CardContent>
           </Card>
-
-          <div className="h-48 mt-auto">
-            <ConflictLog
-              mode={mode}
-              transactions={transactionsProcessed}
-              activeScenario={activeScenario}
-            />
-          </div>
         </div>
       </div>
     </div>

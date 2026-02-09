@@ -6,11 +6,11 @@ import type {
   ApiResponse,
   SessionResponse,
 } from "../types";
+import { SCENARIOS, type ScenarioId } from "../config/scenarios";
+import { BUSINESS_RULES } from "../shared/constants";
 
 // State Management
-const API_BASE = "http://localhost:8787"; // Local wrangler dev
-let isLive = false;
-let currentSessionId: string | null = null;
+let currentScenarioId: ScenarioId = "auction";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -55,94 +55,50 @@ interface MockState {
   >;
 }
 
-let mockState: MockState = {
-  inventory: VALID_SKUS.reduce(
+const createInitialInventory = () =>
+  VALID_SKUS.reduce(
     (acc, id) => ({
       ...acc,
       [id]: {
-        totalStock: 100,
+        totalStock: BUSINESS_RULES.DEFAULT_STOCK,
         allocated: 0,
-        unitPrice: 150.0,
+        unitPrice: SCENARIOS[currentScenarioId].valuePerUnit,
       },
     }),
     {} as MockState["inventory"],
-  ),
+  );
+
+let mockState: MockState = {
+  inventory: createInitialInventory(),
   sessions: {},
 };
 
 export const mockApi = {
-  setLiveMode: (live: boolean) => {
-    isLive = live;
-  },
-
-  getLiveMode: () => isLive,
-
-  setSessionId: (id: string | null) => {
-    currentSessionId = id;
+  setScenario: (id: ScenarioId) => {
+    currentScenarioId = id;
   },
 
   reset: async () => {
-    if (isLive) {
-      try {
-        const res = await fetch(`${API_BASE}/api/demo/reset`, {
-          method: "POST",
-          headers: { Authorization: `Bearer admin-token` },
-        });
-        return await res.json();
-      } catch (e) {
-        return createResponse(false, undefined, {
-          code: "SERVER_OFFLINE",
-          message: "Live backend unreachable",
-        });
-      }
-    }
-    await delay(500);
+    await delay(200);
     mockState = {
-      inventory: VALID_SKUS.reduce(
-        (acc, id) => ({
-          ...acc,
-          [id]: {
-            totalStock: 100,
-            allocated: 0,
-            unitPrice: 150.0,
-          },
-        }),
-        {} as MockState["inventory"],
-      ),
+      inventory: createInitialInventory(),
       sessions: {},
     };
     return createResponse(true, { success: true });
   },
 
   getState: async (): Promise<InventoryItem[]> => {
-    if (isLive) {
-      try {
-        const res = await fetch(`${API_BASE}/api/demo/state`);
-        const apiRes = (await res.json()) as ApiResponse<any[]>;
-        if (apiRes.success && apiRes.data) {
-          // Flattening the live one-SKU slice or multiple SKUs if D1 has them
-          return apiRes.data.map((item) => ({
-            id: item.sku_id as SKUId,
-            name: `Product ${item.sku_id.toUpperCase()}`,
-            category: "Live Slice",
-            totalStock: item.total_stock,
-            unitPrice: item.unit_price,
-            allocatedUnits: item.allocated,
-            availableUnits: item.total_stock - item.allocated,
-            isAllocated: false,
-          }));
-        }
-      } catch (e) {
-        console.error("Live fetch failed, falling back to mock", e);
-      }
-    }
-    await delay(100);
+    await delay(50);
+    const scenario = SCENARIOS[currentScenarioId];
     return VALID_SKUS.map((id) => {
       const inv = mockState.inventory[id];
+      const numericId = parseInt(id.split("-")[1]);
       return {
         id,
-        name: `Product ${id.toUpperCase()}`,
-        category: `Category-${id.charCodeAt(5) % 5}`,
+        name: scenario.getProductName(numericId),
+        category: scenario.isHighDemand(numericId)
+          ? "High Demand"
+          : "Standard Stock",
         totalStock: inv.totalStock,
         unitPrice: inv.unitPrice,
         allocatedUnits: inv.allocated,
@@ -157,26 +113,7 @@ export const mockApi = {
     _userId: string,
     unitsToAllocate: number = 1,
   ): Promise<AllocationResponse> => {
-    if (isLive && currentSessionId) {
-      try {
-        const res = await fetch(`${API_BASE}/api/demo/allocate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${currentSessionId}`,
-          },
-          body: JSON.stringify({ skuId, units: unitsToAllocate, mode: "safe" }),
-        });
-        return await res.json();
-      } catch (e) {
-        return createResponse(false, undefined, {
-          code: "SERVER_OFFLINE",
-          message: "Live backend unreachable",
-        });
-      }
-    }
-
-    await delay(Math.random() * 200 + 100);
+    await delay(Math.random() * 50 + 20);
     const inv = mockState.inventory[skuId];
     if (!inv)
       return createResponse(false, undefined, {
@@ -206,32 +143,9 @@ export const mockApi = {
     _userId: string,
     unitsToAllocate: number = 1,
   ): Promise<AllocationResponse> => {
-    if (isLive && currentSessionId) {
-      try {
-        const res = await fetch(`${API_BASE}/api/demo/allocate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${currentSessionId}`,
-          },
-          body: JSON.stringify({
-            skuId,
-            units: unitsToAllocate,
-            mode: "eventual",
-          }),
-        });
-        return await res.json();
-      } catch (e) {
-        return createResponse(false, undefined, {
-          code: "SERVER_OFFLINE",
-          message: "Live backend unreachable",
-        });
-      }
-    }
-
     const inv = mockState.inventory[skuId];
     const availableUnits = inv.totalStock - inv.allocated;
-    await delay(Math.random() * 300 + 300);
+    await delay(Math.random() * 20 + 10);
 
     if (availableUnits < unitsToAllocate) {
       return createResponse(
@@ -253,27 +167,7 @@ export const mockApi = {
     token: string,
     ipAddress: string,
   ): Promise<SessionResponse> => {
-    if (isLive) {
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ turnstileToken: token }),
-        });
-        const apiRes = (await res.json()) as SessionResponse;
-        if (apiRes.success && apiRes.data) {
-          currentSessionId = apiRes.data.sessionId;
-        }
-        return apiRes;
-      } catch (e) {
-        return createResponse(false, undefined, {
-          code: "SERVER_OFFLINE",
-          message: "Live backend unreachable",
-        });
-      }
-    }
-
-    await delay(300);
+    await delay(200);
     if (!token.startsWith("mock-token-")) {
       return createResponse(false, undefined, {
         code: "INVALID_TOKEN",
@@ -289,25 +183,11 @@ export const mockApi = {
       expiresAt,
       createdAt: Date.now(),
     };
-    currentSessionId = sessionId;
 
     return createResponse(true, { sessionId, expiresAt, ipAddress });
   },
 
   validateSession: async (sessionId: string): Promise<SessionResponse> => {
-    if (isLive && sessionId) {
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${sessionId}` },
-        });
-        return (await res.json()) as SessionResponse;
-      } catch (e) {
-        return createResponse(false, undefined, {
-          code: "SERVER_OFFLINE",
-          message: "Live backend unreachable",
-        });
-      }
-    }
     const session = mockState.sessions[sessionId];
     if (!session || session.expiresAt < Date.now()) {
       return createResponse(false, undefined, {

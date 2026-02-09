@@ -4,7 +4,9 @@ import {
   type SessionPayload,
   type AllocationPayload,
   type SKUId,
+  type InventoryRow,
 } from "@/types";
+import { DISABLE_LIVE_ENGINE } from "@/config/simulationDefaults";
 import { mockApi } from "./mockApi";
 
 class ApiClient {
@@ -24,6 +26,7 @@ class ApiClient {
   }
 
   private isLive(): boolean {
+    if (DISABLE_LIVE_ENGINE) return false;
     const override = localStorage.getItem("demo-api-mode");
     if (override) return override === "live";
     return import.meta.env.VITE_API_MODE === "live";
@@ -36,8 +39,6 @@ class ApiClient {
     localStorage.setItem("demo-api-mode", mode);
     // When switching mode, we need to refresh the local sessionId from the new mode's storage
     this.initializeSession();
-    // Sync mockApi if we have a session
-    mockApi.setSessionId(this.sessionId);
   }
 
   /**
@@ -77,17 +78,23 @@ class ApiClient {
   async login(token: string, ipAddress: string): Promise<SessionResponse> {
     const isCurrentlyLive = this.isLive();
 
-    const livePromise = this.request<SessionPayload>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ turnstileToken: token }),
-    }).catch(
-      (err) =>
-        ({
+    const livePromise = DISABLE_LIVE_ENGINE
+      ? Promise.resolve({
           success: false,
-          error: { code: "LIVE_LOGIN_FAILED", message: String(err) },
+          error: { code: "LIVE_DISABLED", message: "Live engine is disabled" },
           meta: this.makeLocalMeta(),
-        }) as SessionResponse,
-    );
+        } as SessionResponse)
+      : this.request<SessionPayload>("/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ turnstileToken: token }),
+        }).catch(
+          (err) =>
+            ({
+              success: false,
+              error: { code: "LIVE_LOGIN_FAILED", message: String(err) },
+              meta: this.makeLocalMeta(),
+            }) as SessionResponse,
+        );
 
     const mockPromise = mockApi.verifyToken(token, ipAddress);
 
@@ -121,9 +128,6 @@ class ApiClient {
 
     // Clear session for the current mode
     this.setSessionToken(null, activeMode);
-    if (activeMode === "mock") {
-      mockApi.setSessionId(null);
-    }
 
     return response;
   }
@@ -155,6 +159,37 @@ class ApiClient {
     } else {
       // For mock, we check our mock state
       return mockApi.validateSession(storedSessionId);
+    }
+  }
+
+  async getInventory(): Promise<ApiResponse<InventoryRow[]>> {
+    return this.request<InventoryRow[]>("/demo/state");
+  }
+
+  async getQuotaStatus(): Promise<
+    ApiResponse<{
+      cpuUsedMs: number;
+      cpuRemainingMs: number;
+      cpuLimitMs: number;
+      throttleLevel: "normal" | "slow" | "critical";
+      percentageUsed: number;
+    }>
+  > {
+    if (this.isLive()) {
+      return this.request("/quota/status");
+    } else {
+      // Mock always has plenty of quota
+      return {
+        success: true,
+        data: {
+          cpuUsedMs: 0,
+          cpuRemainingMs: 30_000_000,
+          cpuLimitMs: 30_000_000,
+          throttleLevel: "normal",
+          percentageUsed: 0,
+        },
+        meta: this.makeLocalMeta(),
+      };
     }
   }
 
@@ -199,6 +234,7 @@ class ApiClient {
   private getHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
     };
 
     if (this.sessionId) {
@@ -227,8 +263,32 @@ class ApiClient {
         await this.logout();
       }
 
-      return (await response.json()) as ApiResponse<T>;
+      const contentType = response.headers.get("Content-Type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+
+        // Check for common proxy errors (Vite, Cloudflare)
+        let message = `Expected JSON but received ${contentType || "unknown"}`;
+
+        if (
+          text.includes("Vite Hot Module Replacement") ||
+          text.includes("<title>Vite + React</title>")
+        ) {
+          message =
+            "Backend worker is unreachable. Did you start it with `npm run dev:full`?";
+        } else if (response.status === 404) {
+          message = `API route not found: ${path}. Make sure the worker is running and the route is defined.`;
+        } else if (text.length > 0) {
+          message += `: ${text.slice(0, 100)}${text.length > 100 ? "..." : ""}`;
+        }
+
+        throw new Error(message);
+      }
+
+      const data = await response.json();
+      return data as ApiResponse<T>;
     } catch (err: unknown) {
+      console.error(`[ApiClient] Request failed: ${this.baseUrl}${path}`, err);
       return {
         success: false,
         error: {

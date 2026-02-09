@@ -16,41 +16,37 @@ export const SCENARIOS: Record<string, ScenarioDef> = {
   auction: {
     id: "auction",
     name: "Online Marketplace",
-    itemLabel: "Lot",
-    actionLabel: "Bid Placed",
-    valuePerUnit: 1250,
+    itemLabel: "Unit",
+    actionLabel: "Purchased",
+    valuePerUnit: 249,
     icon: Gavel,
-    loadUnit: "bidders",
+    loadUnit: "shoppers",
     getProductName: (id) => {
-      // First 8 = High Demand (Celebrity/Rare)
-      // Rest = Standard (Stamps/Coins)
       const highDemandItems = [
-        "Signed-Banksy-Print",
-        "Elvis-1968-Guitar",
-        "Moon-Rock-Fragment",
-        "Titanic-Menu-Menu",
-        "Jordan-Rookie-Card",
-        "Einstein-Letter",
-        "Princess-Diana-Dress",
-        "Beatles-Vinyl-001",
-        "SpaceX-Flown-Part",
-        "Jobs-Apple-1-PC",
+        "AirPods-Pro-Max",
+        "Mechanical-Keyboard-RGB",
+        "Ergonomic-Gaming-Chair",
+        "UltraWide-4K-Monitor",
+        "Noise-Canceling-Headphones",
+        "Smart-Home-Hub",
+        "Portable-SSD-2TB",
+        "Webcam-1080p-Pro",
       ];
       const lowDemandItems = [
-        "Vintage-Postage-Stamp",
-        "Antique-Spoon-Set",
-        "Ceramic-Figurine",
-        "Old-Map-1890",
-        "Silver-Coin-1922",
-        "Retro-Typewriter",
-        "Victorian-Brooch",
-        "Fountain-Pen-1950",
-        "Pocket-Watch-Broken",
-        "First-Edition-Novel",
+        "USB-C-Cable",
+        "Mouse-Pad-Large",
+        "Phone-Stand",
+        "Laptop-Sleeve",
+        "AA-Batteries-8pk",
+        "HDMI-2.1-Cable",
+        "Screen-Cleaner-Kit",
+        "Cable-Organiser",
+        "Desk-Lamp-LED",
+        "Stylus-Pen",
       ];
 
       if (id < 8) {
-        return highDemandItems[id] || `Rare-Item-${id}`;
+        return highDemandItems[id] || `Tech-Item-${id}`;
       }
       return `${lowDemandItems[id % lowDemandItems.length]}-${id}`;
     },
@@ -59,8 +55,8 @@ export const SCENARIOS: Record<string, ScenarioDef> = {
   concert: {
     id: "concert",
     name: "Ticket Exchange",
-    itemLabel: "Seat",
-    actionLabel: "Ticket Booked",
+    itemLabel: "Ticket",
+    actionLabel: "Booked",
     valuePerUnit: 185,
     icon: Ticket,
     loadUnit: "fans",

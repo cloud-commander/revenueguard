@@ -104,6 +104,7 @@ Ensure the Worker returns correct headers for your Pages domain:
   ```bash
   npx wrangler analytics-engine dataset cf_revenue_guard_events
   ```
+- [ ] Trigger the virtual guardrail (allocate until the 100-unit window trips), confirm `/api/ws` now returns 403 (guardrail triggered) and the WebSocket stream closes, and look for a `VIRTUAL_GUARDRAIL_TRIGGERED` row in the analytics dataset for the sessionId.
 
 ---
 
@@ -132,3 +133,9 @@ npx wrangler rollback [DEPLOYMENT_ID]
 - **500 Errors**: Check logs with `npx wrangler tail`.
 - **D1 Quota**: Clear old sessions: `npx wrangler d1 execute cf-revenue-guard-db --remote --command "DELETE FROM sessions WHERE expires_at < ..."`
 - **WebSocket Failures**: Verify `Upgrade` header is allowed and DO is active.
+
+## 8. Guardrail Telemetry & Runbook Alignment
+
+- **Guardrail Dataset**: Analytics Engine now receives `VIRTUAL_GUARDRAIL_TRIGGERED` events with `blobs: [sessionId, ip, "VIRTUAL_GUARDRAIL_TRIGGERED", skuId]` and `doubles: [virtualCosts, units, latencyMs]`. If you need to inspect them, run `npx wrangler analytics-engine query cf_revenue_guard_events --limit 5` and filter by `sessionId`.
+- **Operational Signal**: The Worker stores `guardrailTriggered` on each session and rejects `/api/ws` upgrades once it is true, so live dashboards stop receiving telemetry after the auto-stop. Use the `/api/demo/reset` command to clear the flag before re-testing guardrail behavior.
+- **Docs Synchronization**: Keep this runbook and [EDGE_API_SPEC.md Conformance](../implementation/EDGE_API_SPEC_CONFORMANCE.md) aligned—update both whenever the guardrail, WebSocket, or telemetry flows change so operators know what to monitor and expect.

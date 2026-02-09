@@ -27,7 +27,7 @@ export const EdgePresence = ({ mode }: { mode: SimulationMode }) => {
           </h3>
         </div>
 
-        <div className="relative h-32 bg-muted/30 rounded-lg border border-border/50 p-4 flex flex-col overflow-hidden">
+        <div className="relative h-24 bg-muted/30 rounded-lg border border-border/50 p-4 flex flex-col overflow-hidden">
           {/* Tier 1: Distance/Latency Labels (Aligned with Track) */}
           <div className="h-1/2 flex items-start pt-1 relative gap-4 px-2 pointer-events-none">
             {/* Spacer to match LHR Icon width */}

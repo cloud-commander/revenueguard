@@ -6,7 +6,7 @@ export interface AllocationValidationResult {
     | "NEGATIVE_UNITS"
     | "NON_INTEGER_UNITS"
     | "EXCEEDS_MAX_TRANSACTION"
-    | "INSUFFICIENT_STOCK";
+    | "OUT_OF_STOCK";
   message?: string;
 }
 
@@ -45,7 +45,7 @@ export const InventoryRules = {
     if (units > availableUnits) {
       return {
         isValid: false,
-        errorCode: "INSUFFICIENT_STOCK",
+        errorCode: "OUT_OF_STOCK",
         message: "Insufficient stock.",
       };
     }

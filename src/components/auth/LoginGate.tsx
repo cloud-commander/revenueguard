@@ -9,6 +9,11 @@ interface LoginGateProps {
 
 export const LoginGate = ({ onLogin }: LoginGateProps) => {
   const [error, setError] = useState<string | null>(null);
+  const shouldShowFallback =
+    !!error &&
+    /fetch|network|expected json|backend worker is unreachable|api route not found/i.test(
+      error,
+    );
 
   const handleVerify = useCallback(
     async (token: string) => {
@@ -75,8 +80,7 @@ export const LoginGate = ({ onLogin }: LoginGateProps) => {
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-red-500 text-xs text-center">
                     {error}
                   </div>
-                  {(error.toLowerCase().includes("fetch") ||
-                    error.toLowerCase().includes("network")) && (
+                  {shouldShowFallback && (
                     <button
                       onClick={() => {
                         window.localStorage.setItem("demo-api-mode", "mock");

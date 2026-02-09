@@ -62,6 +62,15 @@ export type InventoryItem = {
   isAllocated?: boolean;
 };
 
+export type InventoryRow = {
+  session_id?: string;
+  sku_id: SKUId;
+  total_stock: number;
+  allocated: number;
+  unit_price: number;
+  updated_at?: string;
+};
+
 export type AllocationMode = "safe" | "eventual";
 
 // CONFORMANCE: EDGE_API_SPEC.md - Standard response envelope
@@ -87,10 +96,22 @@ export type AllocationPayload = {
 
 export type AllocationResponse = ApiResponse<AllocationPayload>;
 
+export type ThrottleLevel = "normal" | "slow" | "critical";
+
+export type QuotaStatus = {
+  cpuUsedMs: number;
+  cpuRemainingMs: number;
+  cpuLimitMs: number;
+  throttleLevel: ThrottleLevel;
+  percentageUsed: number;
+};
+
 export type SessionPayload = {
   sessionId: string;
   expiresAt: number; // Unix milliseconds
   ipAddress?: string;
+  guardrailTriggered?: boolean;
+  throttleLevel?: ThrottleLevel;
 };
 
 export type SessionResponse = ApiResponse<SessionPayload>;

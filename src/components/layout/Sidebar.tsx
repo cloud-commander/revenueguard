@@ -1,14 +1,16 @@
 import { cn } from "@/lib/utils";
+import { DISABLE_LIVE_ENGINE } from "@/config/simulationDefaults";
 import {
   LayoutDashboard,
   BookOpen,
   Activity,
+  ShieldCheck,
   Database,
   HardDrive,
   LogOut,
 } from "lucide-react";
 
-export type ViewState = "monitor" | "telemetry" | "knowledge";
+export type ViewState = "monitor" | "session" | "telemetry" | "knowledge";
 
 interface SidebarProps {
   currentView: ViewState;
@@ -16,6 +18,7 @@ interface SidebarProps {
   apiMode: "mock" | "live";
   onToggleApiMode: () => void;
   onLogout?: () => void;
+  onLegalClick?: () => void;
   className?: string; // For hiding on mobile if needed
 }
 
@@ -25,10 +28,12 @@ export const Sidebar = ({
   apiMode,
   onToggleApiMode,
   onLogout,
+  onLegalClick,
   className,
 }: SidebarProps) => {
   const navItems = [
     { id: "monitor", label: "Monitor", icon: LayoutDashboard },
+    { id: "session", label: "Session Status", icon: ShieldCheck },
     { id: "telemetry", label: "Telemetry", icon: Activity },
     { id: "knowledge", label: "Knowledge", icon: BookOpen },
   ];
@@ -91,32 +96,34 @@ export const Sidebar = ({
 
       {/* Footer / Status Area */}
       <div className="p-4 border-t border-border bg-muted/20 space-y-4">
-        <div className="space-y-2">
-          <div className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-wider px-2">
-            API Environment
-          </div>
-          <button
-            onClick={onToggleApiMode}
-            className={cn(
-              "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all border",
-              apiMode === "live"
-                ? "bg-[var(--color-engine-accent)]/10 text-[var(--color-engine-accent)] border-[var(--color-engine-accent)]/20"
-                : "bg-muted text-muted-foreground border-transparent hover:border-border",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              {apiMode === "live" ? (
-                <Database className="w-3.5 h-3.5" />
-              ) : (
-                <HardDrive className="w-3.5 h-3.5" />
-              )}
-              {apiMode === "live" ? "Live Worker" : "Mock Engine"}
+        {!DISABLE_LIVE_ENGINE && (
+          <div className="space-y-2">
+            <div className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-wider px-2">
+              API Environment
             </div>
-            <span className="text-[8px] opacity-50 uppercase tracking-widest">
-              Switch
-            </span>
-          </button>
-        </div>
+            <button
+              onClick={onToggleApiMode}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all border",
+                apiMode === "live"
+                  ? "bg-[var(--color-engine-accent)]/10 text-[var(--color-engine-accent)] border-[var(--color-engine-accent)]/20"
+                  : "bg-muted text-muted-foreground border-transparent hover:border-border",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {apiMode === "live" ? (
+                  <Database className="w-3.5 h-3.5" />
+                ) : (
+                  <HardDrive className="w-3.5 h-3.5" />
+                )}
+                {apiMode === "live" ? "Live Worker" : "Mock Engine"}
+              </div>
+              <span className="text-[8px] opacity-50 uppercase tracking-widest">
+                Switch
+              </span>
+            </button>
+          </div>
+        )}
 
         {onLogout && (
           <button
@@ -128,8 +135,16 @@ export const Sidebar = ({
           </button>
         )}
 
-        <div className="text-[10px] text-muted-foreground text-center pt-2 opacity-50">
-          Cloudflare Workers &copy; 2024
+        <div className="flex flex-col gap-1 text-[10px] text-muted-foreground text-center pt-2 opacity-70">
+          <span>Educational Simulation • Community Project</span>
+          {onLegalClick && (
+            <button
+              onClick={onLegalClick}
+              className="text-[10px] font-semibold uppercase tracking-[0.3em] hover:underline"
+            >
+              Legal Disclaimer
+            </button>
+          )}
         </div>
       </div>
     </div>

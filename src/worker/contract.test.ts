@@ -21,7 +21,7 @@ describe("Contract & API Integrity", () => {
     await env.REVENUE_GUARD_DB.prepare(
       "INSERT OR REPLACE INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     )
-      .bind(sessionId, "sku-contract-001", 100, 150.0, Date.now())
+      .bind(sessionId, "sku-001", 100, 150.0, Date.now())
       .run();
   });
 
@@ -30,10 +30,11 @@ describe("Contract & API Integrity", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
         Authorization: authHeader,
       },
       body: JSON.stringify({
-        skuId: "sku-contract-001",
+        skuId: "sku-001",
         units: 1,
         mode: "safe",
       }),
@@ -57,6 +58,7 @@ describe("Contract & API Integrity", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
         Authorization: authHeader,
       },
       body: JSON.stringify({ skuId: "non-existent", units: 1, mode: "safe" }),

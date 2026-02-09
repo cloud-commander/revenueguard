@@ -1,12 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { type ScenarioId } from "@/config/scenarios";
 
-import { type AllocationMode, type SessionPayload } from "@/types";
+import {
+  type AllocationMode,
+  type SessionPayload,
+  type InventoryItem,
+  type QuotaStatus,
+  type ThrottleLevel,
+} from "@/types";
 import {
   BILLING_SCALE,
   DEFAULT_CONFIG,
   SIMULATION_LIMITS,
   SIMULATION_CONSTANTS,
+  DISABLE_LIVE_ENGINE,
   type SimulationConfig,
 } from "@/config/simulationDefaults";
 import { simulationApi, type ApiMode } from "@/services/simulationApi";
@@ -51,6 +58,12 @@ interface SimulationState {
   sessionLive: SessionPayload | null;
   apiMode: "mock" | "live";
   error?: string | null;
+  inventorySnapshot: InventoryItem[];
+  inventoryLoading: boolean;
+  inventoryError: string | null;
+  guardrailTriggered: boolean;
+  quotaStatus: QuotaStatus | null;
+  throttleLevel: ThrottleLevel;
 }
 
 const INITIAL_STATE: SimulationState = {
@@ -78,6 +91,12 @@ const INITIAL_STATE: SimulationState = {
   sessionLive: null,
   apiMode: "mock",
   error: null,
+  inventorySnapshot: [],
+  inventoryLoading: false,
+  inventoryError: null,
+  guardrailTriggered: false,
+  quotaStatus: null,
+  throttleLevel: "normal",
 };
 
 export function useSimulation() {
@@ -88,11 +107,144 @@ export function useSimulation() {
   const stateRef = useRef(INITIAL_STATE);
   const configRef = useRef(DEFAULT_CONFIG);
   const lastRenderRef = useRef<number>(0);
+  const quotaPollIntervalRef = useRef<number | null>(null);
+  const inventoryPollIntervalRef = useRef<number | null>(null);
+  const lastLiveSyncRef = useRef<number | null>(null);
 
   // Initialize stateRef and configRef with the initial state and config
   useEffect(() => {
     stateRef.current = INITIAL_STATE;
     configRef.current = DEFAULT_CONFIG;
+  }, []);
+
+  const refreshInventory = useCallback(async (mode?: ApiMode) => {
+    const targetMode = mode || stateRef.current.apiMode;
+
+    if (targetMode === "live" && !stateRef.current.sessionLive) {
+      const message = "Live inventory requires an authenticated session.";
+      stateRef.current = {
+        ...stateRef.current,
+        inventorySnapshot: [],
+        inventoryLoading: false,
+        inventoryError: message,
+      };
+      setState((prev) => ({
+        ...prev,
+        inventorySnapshot: [],
+        inventoryLoading: false,
+        inventoryError: message,
+      }));
+      return;
+    }
+
+    stateRef.current = {
+      ...stateRef.current,
+      inventoryLoading: true,
+      inventoryError: null,
+    };
+    setState((prev) => ({
+      ...prev,
+      inventoryLoading: true,
+      inventoryError: null,
+    }));
+
+    try {
+      const inventory = await simulationApi.getInventory(targetMode);
+      stateRef.current = {
+        ...stateRef.current,
+        inventorySnapshot: inventory,
+        inventoryLoading: false,
+        inventoryError: null,
+      };
+      setState((prev) => ({
+        ...prev,
+        inventorySnapshot: inventory,
+        inventoryLoading: false,
+        inventoryError: null,
+      }));
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to retrieve inventory data.";
+      stateRef.current = {
+        ...stateRef.current,
+        inventorySnapshot: [],
+        inventoryLoading: false,
+        inventoryError: message,
+      };
+      setState((prev) => ({
+        ...prev,
+        inventorySnapshot: [],
+        inventoryLoading: false,
+        inventoryError: message,
+      }));
+    }
+  }, []);
+
+  const pollQuotaStatus = useCallback(async () => {
+    if (stateRef.current.apiMode !== "live") return;
+    try {
+      const response = await simulationApi.getQuotaStatus();
+      if (response.success && response.data) {
+        const quotaData = response.data;
+        stateRef.current = {
+          ...stateRef.current,
+          quotaStatus: quotaData,
+          throttleLevel: quotaData.throttleLevel,
+        };
+        setState((prev) => ({
+          ...prev,
+          quotaStatus: quotaData,
+          throttleLevel: quotaData.throttleLevel,
+        }));
+        // Auto-fallback to mock if critical
+        if (quotaData.throttleLevel === "critical") {
+          console.warn(
+            "[Quota] Critical threshold reached, consider switching to mock mode",
+          );
+        }
+      }
+    } catch (err) {
+      console.error("[Quota] Failed to fetch quota status", err);
+    }
+  }, []);
+
+  const pollInventoryStatus = useCallback(async () => {
+    if (!stateRef.current.session) {
+      return;
+    }
+    try {
+      const inventory = await simulationApi.getInventory();
+      // Only update if inventory has changed
+      const current = stateRef.current.inventorySnapshot;
+      const changed =
+        inventory.length !== current.length ||
+        inventory.some(
+          (item, idx) =>
+            !current[idx] ||
+            item.availableUnits !== current[idx].availableUnits ||
+            item.allocatedUnits !== current[idx].allocatedUnits,
+        );
+
+      if (changed) {
+        stateRef.current = {
+          ...stateRef.current,
+          inventorySnapshot: inventory,
+        };
+        setState((prev) => ({
+          ...prev,
+          inventorySnapshot: inventory,
+        }));
+        console.log(
+          "[Inventory] Live state updated",
+          inventory.length,
+          "items",
+        );
+      }
+    } catch (err) {
+      console.error("[Inventory] Failed to fetch live inventory", err);
+    }
   }, []);
 
   const toggleMode = () => {
@@ -132,7 +284,7 @@ export function useSimulation() {
 
   useWebSocket({
     url: wsUrl,
-    shouldConnect: state.isLive && !!state.session,
+    shouldConnect: state.isLive && !!state.session && !state.guardrailTriggered,
     onMessage: (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -172,7 +324,9 @@ export function useSimulation() {
       const sessionMock = mockRes.success ? mockRes.data : null;
       const sessionLive = liveRes.success ? liveRes.data : null;
 
-      const currentMode = stateRef.current.apiMode;
+      const currentMode = DISABLE_LIVE_ENGINE
+        ? "mock"
+        : stateRef.current.apiMode;
       const activeSession = currentMode === "live" ? sessionLive : sessionMock;
 
       // Auto-enable live simulation if in Live Engine mode
@@ -199,6 +353,8 @@ export function useSimulation() {
         simulationApi.setLiveMode(true);
       }
 
+      await refreshInventory();
+
       return { success: true };
     } else {
       const errorMsg = response.error?.message || "Login failed";
@@ -211,6 +367,7 @@ export function useSimulation() {
   };
 
   const toggleApiMode = async () => {
+    if (DISABLE_LIVE_ENGINE) return;
     const newMode: ApiMode =
       stateRef.current.apiMode === "mock" ? "live" : "mock";
 
@@ -235,6 +392,8 @@ export function useSimulation() {
       session: newSession,
       isLive: newMode === "live" && !!newSession,
     }));
+
+    await refreshInventory(newMode);
   };
 
   const toggleLive = async () => {
@@ -265,7 +424,13 @@ export function useSimulation() {
   useEffect(() => {
     const init = async () => {
       simulationApi.initializeSession();
-      const currentMode = simulationApi.getApiMode();
+      const currentMode = DISABLE_LIVE_ENGINE
+        ? "mock"
+        : simulationApi.getApiMode();
+
+      if (DISABLE_LIVE_ENGINE && simulationApi.getApiMode() === "live") {
+        simulationApi.setApiMode("mock");
+      }
 
       // Load BOTH sessions if they exist
       const [mockRes, liveRes] = await Promise.all([
@@ -292,9 +457,72 @@ export function useSimulation() {
         sessionLive: sessionLive as SessionPayload,
         apiMode: currentMode,
       }));
+
+      await refreshInventory(currentMode);
     };
     init();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refreshInventory]);
+
+  // Quota polling effect: poll every 5-10s based on throttle level
+  useEffect(() => {
+    if (stateRef.current.apiMode !== "live" || !stateRef.current.session) {
+      if (quotaPollIntervalRef.current) {
+        clearInterval(quotaPollIntervalRef.current);
+        quotaPollIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Initial poll on mount
+    pollQuotaStatus();
+
+    // Set up interval based on throttle level
+    const getInterval = () => {
+      const throttle = stateRef.current.throttleLevel;
+      if (throttle === "normal") return 10_000; // 10s
+      if (throttle === "slow") return 5_000; // 5s
+      return 3_000; // 3s for critical
+    };
+
+    quotaPollIntervalRef.current = setInterval(
+      () => pollQuotaStatus(),
+      getInterval(),
+    );
+
+    return () => {
+      if (quotaPollIntervalRef.current) {
+        clearInterval(quotaPollIntervalRef.current);
+        quotaPollIntervalRef.current = null;
+      }
+    };
+  }, [pollQuotaStatus]);
+
+  // Inventory polling effect: poll every 2-5s in live mode
+  useEffect(() => {
+    if (!stateRef.current.session) {
+      if (inventoryPollIntervalRef.current) {
+        clearInterval(inventoryPollIntervalRef.current);
+        inventoryPollIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Initial poll on mount
+    pollInventoryStatus();
+
+    // Set up interval (more frequent than quota since inventory changes matter)
+    inventoryPollIntervalRef.current = setInterval(
+      () => pollInventoryStatus(),
+      3_000, // 3s polling for live inventory
+    );
+
+    return () => {
+      if (inventoryPollIntervalRef.current) {
+        clearInterval(inventoryPollIntervalRef.current);
+        inventoryPollIntervalRef.current = null;
+      }
+    };
+  }, [pollInventoryStatus]);
 
   useEffect(() => {
     if (!isRunning || !state.session) return;
@@ -342,9 +570,72 @@ export function useSimulation() {
         current.totalRequests + billedThisTick,
       );
 
-      if (newTotalRequests >= SIMULATION_LIMITS.HARD_LIMIT) {
+      const guardrailLimit = SIMULATION_LIMITS.HARD_LIMIT;
+      // Only enforce guardrail in LIVE mode
+      if (current.apiMode === "live" && newTotalRequests >= guardrailLimit) {
+        const guardrailMessage = `Guardrail auto-stop triggered at ${guardrailLimit.toLocaleString(
+          "en-US",
+        )} requests. Reset the simulation to continue.`;
+
+        if (!stateRef.current.guardrailTriggered) {
+          stateRef.current = {
+            ...stateRef.current,
+            totalRequests: newTotalRequests,
+            guardrailTriggered: true,
+            error: guardrailMessage,
+          };
+          setState((prev) => ({
+            ...prev,
+            totalRequests: newTotalRequests,
+            guardrailTriggered: true,
+            error: guardrailMessage,
+          }));
+        } else {
+          stateRef.current = {
+            ...stateRef.current,
+            totalRequests: newTotalRequests,
+            guardrailTriggered: true,
+            error: guardrailMessage,
+          };
+          setState((prev) => ({
+            ...prev,
+            totalRequests: newTotalRequests,
+            // We just update requests here, error message is already set or we re-set it to be safe
+            error: guardrailMessage,
+          }));
+        }
         setIsRunning(false);
-        // ... error state logic could be added here or just stop
+        return;
+      }
+
+      // --- ALLOCATION CYCLE (Mock or Live) ---
+      // We trigger backend allocations periodically so the inventory Snapshot actually moves
+      if (
+        current.session &&
+        current.inventorySnapshot.length > 0 &&
+        (!lastLiveSyncRef.current ||
+          Date.now() - lastLiveSyncRef.current > 2000)
+      ) {
+        lastLiveSyncRef.current = Date.now();
+        // Pick random SKU to allocate
+        const randomSku =
+          current.inventorySnapshot[
+            Math.floor(Math.random() * current.inventorySnapshot.length)
+          ];
+        const units = Math.ceil(Math.random() * 3); // Allocate 1-3 units
+
+        // Fire and forget (don't await in loop)
+        simulationApi
+          .allocate(current.mode, randomSku.id, units)
+          .then((res) => {
+            if (res.success) {
+              const modeLabel = current.apiMode === "live" ? "Live" : "Mock";
+              console.log(
+                `[Simulation] ${modeLabel} alloc triggered: ${units}x ${randomSku.id}`,
+              );
+            }
+          })
+          .catch((e) => console.error("[Simulation] Allocation failed", e));
       }
 
       // --- CALCULATE PHYSICS (Separated Logic) ---
@@ -395,7 +686,7 @@ export function useSimulation() {
         activeUsers,
         transactionsProcessed:
           current.transactionsProcessed + results.processed,
-        // totalRequests: newTotalRequests, // We can skip strictly tracking this for now or re-add
+        totalRequests: newTotalRequests,
         telemetry: trimmedTelemetry,
         timestamp: Date.now(),
         config: config,
@@ -428,6 +719,8 @@ export function useSimulation() {
       activeScenario: scenarioId,
     };
     setState((prev) => ({ ...prev, activeScenario: scenarioId }));
+    simulationApi.setScenario(scenarioId);
+    resetSimulation();
   };
 
   const updateConfig = (newConfig: Partial<SimulationConfig>) => {
@@ -476,6 +769,8 @@ export function useSimulation() {
     };
     stateRef.current = preservedState;
     setState(preservedState);
+
+    void refreshInventory();
   };
 
   return {
