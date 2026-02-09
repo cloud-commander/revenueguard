@@ -1,5 +1,8 @@
 # Revenue Guard: Technical Design Document
 
+> [!NOTE]
+> **Technical Snapshot**: Detailed architecture for a high-concurrency inventory simulator. Leverages `InventoryDO` for single-threaded serialization and `REVENUE_DB` (D1) for comparative race-condition analysis. Highlights include WebSocket hibernation for efficiency and SKU-based sharding for linear scalability.
+
 > [!IMPORTANT]
 > **Project Status**: Specification Phase
 > **Goal**: Comparative simulation of distributed race conditions (D1 SQLite vs Durable Objects) during a high-concurrency Flash Sale.
@@ -2865,3 +2868,12 @@ describe("Allocation System", () => {
 3. **Analytics Dashboard**: Real-time metrics on race conditions detected
 4. **Load Testing**: Automated script to generate 1000+ concurrent requests
 5. **Video Recording**: Capture demo runs for sales presentations
+
+---
+
+## 🎯 Key Takeaways
+
+- **Serialization is Key**: Durable Objects process requests sequentially per instance, providing an atomic "lock-and-set" primitive at the edge.
+- **Hibernation for Cost**: Using the WebSocket Hibernation API ensures memory is only used when active communication is required.
+- **Sharding for Scale**: Linear RPS growth is achieved by horizontally sharding SKUs across multiple DO instances.
+- **Observability Driven**: Every transaction generates structured logs to prove revenue protection value in real-time.

@@ -173,12 +173,12 @@ curl -X POST $D1_PROD_URL/api/auth/login \
 
 ## Environment Variables Reference
 
-| Variable           | Dev Value     | Prod Value    | Purpose                                       |
-| ------------------ | ------------- | ------------- | --------------------------------------------- |
-| `BILLING_SCALE`    | `0.000000001` | `0.000000001` | Real charges multiplier (10^-9 = nearly free) |
-| `TURNSTILE_SECRET` | `DEBUG_TOKEN` | Your secret   | Turnstile site verification                   |
-| `DEMO_COST_LIMIT`  | `0.0`         | `0.0`         | Hard spend limit (blocks all if exceeded)     |
-| `ALERT_THRESHOLD`  | `0.0`         | `0.0`         | Guardrail alert threshold (virtual cost)      |
+| Variable           | Dev Value     | Prod Value  | Purpose                                       |
+| ------------------ | ------------- | ----------- | --------------------------------------------- |
+| `BILLING_SCALE`    | `0.0001`      | `0.0001`    | Real charges multiplier (10^-4)               |
+| `TURNSTILE_SECRET` | `DEBUG_TOKEN` | Your secret | Turnstile site verification                   |
+| `DEMO_COST_LIMIT`  | `1000000`     | `1000000`   | Hard request limit (blocks if exceeded)       |
+| `ALERT_THRESHOLD`  | `500000`      | `500000`    | Guardrail alert threshold (simulated traffic) |
 
 ---
 

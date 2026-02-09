@@ -2,100 +2,37 @@
 
 ## HTTP Endpoints
 
-### `POST /api/reset`
+All endpoints require a `Bearer <sessionId>` Authorization header unless otherwise specified.
 
-Resets the simulation state for all SKUs.
+### `POST /api/auth/login`
 
-```typescript
-// D1: Reset both tables
-await env.REVENUE_DB.batch([
-  env.REVENUE_DB.prepare("UPDATE inventory SET allocated_units = 0"),
-  env.REVENUE_DB.prepare("DELETE FROM allocations"),
-]);
+**No Auth Required**. Verifies Turnstile token and creates a session.
 
-// DO: Delete all instances (for each SKU)
-for (const skuId of VALID_SKUS) {
-  const id = env.INVENTORY_DO.idFromName(skuId);
-  const stub = env.INVENTORY_DO.get(id);
-  await stub.fetch(new Request("https://fake/reset", { method: "DELETE" }));
-}
-```
+### `GET /api/auth/me`
 
-### `POST /api/allocate`
+Validates the current session. Returns expiration and IP context.
 
-Attempts to allocate a unit in a SKU.
+### `POST /api/demo/reset`
+
+Resets simulation state for the active session. Clears inventory in D1 and resets the `InventoryGuard` DO instance.
+
+### `POST /api/demo/allocate`
+
+Attempts to allocate units in a SKU. Supports `safe` (DO-atomic) and `eventual` (D1-race) modes.
 
 **Request Body**:
 
 ```json
 {
   "skuId": "sku-001",
-  "userId": "uuid-v4-string",
-  "mode": "safe" | "unsafe"
+  "units": 1,
+  "mode": "safe" | "eventual"
 }
 ```
 
-**Routing Logic**:
+### `GET /api/demo/state`
 
-```typescript
-if (mode === "safe") {
-  // Route to Durable Object
-  const id = env.INVENTORY_DO.idFromName(skuId);
-  const stub = env.INVENTORY_DO.get(id);
-  return stub.fetch(request.clone());
-} else {
-  // Route to D1 (Unsafe path)
-  return handleUnsafeAllocation(env, skuId, userId);
-}
-```
-
-### `POST /api/simulate-rush`
-
-Triggers a server-side burst of concurrent allocation requests.
-
-**Why**: Browsers limit concurrent connections (~6 max). The Worker spawns 120+ async requests internally.
-
-**Request Body**:
-
-```json
-{
-  "skuId": "sku-001",
-  "mode": "safe" | "unsafe",
-  "count": 125
-}
-```
-
-**Logic**:
-
-```typescript
-const results = await Promise.allSettled(
-  Array.from({ length: count }, (_, i) =>
-    handleAllocationInternal(env, {
-      skuId,
-      userId: `sim-user-${Date.now()}-${i}`,
-      mode,
-    }),
-  ),
-);
-```
-
-### `GET /api/state`
-
-Returns current allocation state for a SKU.
-
-**Query Params**: `?skuId=sku-001&mode=safe|unsafe`
-
-**Response**:
-
-```json
-{
-  "skuId": "sku-001",
-  "totalStock": 100,
-  "allocatedUnits": 15,
-  "availableUnits": 85,
-  "allocations": ["user-1", "user-2"]
-}
-```
+Returns the current inventory state for the session, including `unitsAvailable` and `virtualCosts`.
 
 ## WebSocket Protocol (`/api/ws`)
 

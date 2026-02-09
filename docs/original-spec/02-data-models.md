@@ -38,45 +38,48 @@ CREATE TABLE allocations (
 
 ## Type Definitions
 
-**Environment Bindings**:
+### Environment Bindings
 
 ```typescript
 interface Env {
-  INVENTORY_DO: DurableObjectNamespace;
-  REVENUE_DB: D1Database;
-  RACE_DELAY_MS?: string; // Optional override, default 200ms
+  INVENTORY_GUARD: DurableObjectNamespace;
+  REVENUE_GUARD_DB: D1Database;
+  REVENUE_GUARD_KV: KVNamespace;
 }
-
-const VALID_SKUS = [
-  "sku-001",
-  "sku-002",
-  "sku-003",
-  "sku-004",
-  "sku-005",
-] as const;
-type SkuId = (typeof VALID_SKUS)[number];
 ```
 
-**Booking Request & Response**:
+const VALID_SKUS = [
+"sku-001",
+"sku-002",
+"sku-003",
+"sku-004",
+"sku-005",
+] as const;
+type SkuId = (typeof VALID_SKUS)[number];
 
-````typescript
-**Allocation Request & Response**:
+### Allocation Request & Response
 
 ```typescript
 interface AllocationRequest {
-  skuId: SkuId;
-  userId: string; // UUID v4
-  mode: "safe" | "unsafe";
+  skuId: string;
+  units: number;
+  mode: "safe" | "eventual";
 }
 
 interface AllocationResponse {
   success: boolean;
-  message: string;
-  availableUnits?: number;
-  allocatedUnits?: number;
-  error?: "FULL" | "INVALID_SKU" | "STORAGE_FAILURE" | "INTERNAL_ERROR";
+  data?: {
+    availableUnits: number;
+    totalAllocated: number;
+    revenueGenerated: number;
+  };
+  error?: {
+    code: string;
+    message: string;
+  };
+  meta: ApiResponseMeta;
 }
-````
+```
 
 **Simulation Request**:
 
@@ -88,19 +91,14 @@ interface SimulationRequest {
 }
 ```
 
-**WebSocket Message Types**:
+### WebSocket Message Types
 
 ```typescript
-type WSMessage =
-  | {
-      type: "UPDATE";
-      skuId: string;
-      availableUnits: number;
-      allocatedUnits: number;
-      allocations: string[];
-    }
-  | { type: "RESET"; skuId: string }
-  | { type: "ERROR"; message: string };
+type WSMessage = {
+  type: "UPDATE";
+  skuId: string;
+  units: number;
+};
 ```
 
-See [03-api-protocol.md](03-api-protocol.md) for how these types are used in endpoints.
+See [03-api-protocol.md](03-api-protocol.md) for endpoint usage.

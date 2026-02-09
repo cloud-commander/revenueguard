@@ -8,7 +8,7 @@ export interface SimulationApi {
   login(token: string, ip: string): Promise<SessionResponse>;
   logout(): Promise<void>;
   initializeSession(): void;
-  getCurrentSession(): Promise<SessionResponse>;
+  getCurrentSession(mode?: ApiMode): Promise<SessionResponse>;
   getApiMode(): ApiMode;
   setApiMode(mode: ApiMode): void;
   allocate(
@@ -25,7 +25,7 @@ export const simulationApi: SimulationApi = {
     await apiClient.logout();
   },
   initializeSession: () => apiClient.initializeSession(),
-  getCurrentSession: () => apiClient.getCurrentSession(),
+  getCurrentSession: (mode?: ApiMode) => apiClient.getCurrentSession(mode),
   getApiMode: () => apiClient.getApiMode() as ApiMode,
   setApiMode: (mode: ApiMode) => apiClient.setApiMode(mode),
   allocate: (mode, skuId, quantity) =>

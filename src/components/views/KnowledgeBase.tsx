@@ -6,7 +6,14 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { BookOpen, Server, ShieldCheck, Scale, TrendingUp } from "lucide-react";
+import {
+  BookOpen,
+  Server,
+  ShieldCheck,
+  Scale,
+  TrendingUp,
+  Cloud,
+} from "lucide-react";
 
 const KBSection = ({ value }: { value: string; title: string; icon: any }) => {
   if (value === "fundamentals") {
@@ -99,6 +106,16 @@ const KBSection = ({ value }: { value: string; title: string; icon: any }) => {
     );
   }
 
+  if (value === "cloudflare") {
+    return (
+      <div className="grid grid-cols-1 gap-6 max-w-4xl">
+        <div className="bg-card rounded-2xl p-4 md:p-6 border border-border shadow-sm">
+          <HelpCards category="cloudflare" title="Tech Stack Breakdown" />
+        </div>
+      </div>
+    );
+  }
+
   return null;
 };
 
@@ -110,6 +127,7 @@ export const KnowledgeBase = () => {
     { value: "mathematics", title: "Mathematics", icon: TrendingUp },
     { value: "alternatives", title: "Comparison", icon: Scale },
     { value: "strategy", title: "Strategy", icon: TrendingUp },
+    { value: "cloudflare", title: "Cloudflare Stack", icon: Cloud },
   ];
 
   return (
@@ -130,7 +148,7 @@ export const KnowledgeBase = () => {
       {/* Desktop View: Tabs */}
       <div className="hidden lg:block">
         <Tabs defaultValue="fundamentals" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-muted rounded-xl mb-8 h-auto p-1 shadow-sm">
+          <TabsList className="grid w-full grid-cols-7 bg-muted rounded-xl mb-8 h-auto p-1 shadow-sm">
             {sections.map((s) => (
               <TabsTrigger
                 key={s.value}

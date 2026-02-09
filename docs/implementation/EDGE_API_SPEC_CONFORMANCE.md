@@ -1,14 +1,14 @@
 # EDGE_API_SPEC.md Conformance Implementation
 
-**Status**: ✅ Full Alignment (Worker + Client)
-**Date**: 2026-02-06  
-**Scope**: Production-ready Worker on cfdemo.link
+**Status**: ✅ Live Worker + Client aligned
+**Date**: 2026-02-09  
+**Scope**: Production Worker on cfdemo.link
 
 ---
 
 ## 1. Conformance Summary
 
-The implementation is now fully compliant with the centralized WAF rules for `cfdemo.link`. The live Worker correctly enforces rate limits, session validation, and response envelopes as specified.
+The Worker now enforces the spec for Turnstile auth, rate limits, session validation, guardrail telemetry, and ApiResponse envelopes. All protected endpoints return `meta` on success and failure, the rate limits are enforced via KV counters, and Analytics Engine emits `guardrailTriggered` events whenever the virtual budget window is exceeded.
 
 ### Changes Made
 
@@ -36,9 +36,18 @@ The implementation is now fully compliant with the centralized WAF rules for `cf
 
 #### 1.3 API Client Layer (services/apiClient.ts)
 
-- ✅ `ApiClient` class with Authorization header support and session persistence
-- ✅ Mock mode uses spec envelope; live mode is stubbed (base URL + fetch)
-- ⚠️ Live `/auth/me`/`/auth/logout` depend on future Worker; mock path supplies meta now
+- ✅ `ApiClient` class with Authorization header support, session persistence, and fallback for mock/live toggles
+- ✅ Mock mode uses spec envelope while live mode negotiates directly with the Worker
+- ✅ Live `/auth/login`, `/api/auth/me`, `/api/demo/allocate`, `/api/demo/state`, and `/api/demo/reset` are implemented; the client stores each session independently
+
+#### 1.4 Live Worker Endpoint Coverage
+
+- ✅ `/api/auth/login` (Turnstile + KV session)
+- ✅ `/api/auth/me` (session validation + rate limiting)
+- ✅ `/api/demo/state` (inventory snapshot from D1)
+- ✅ `/api/demo/allocate` (DO-backed atomic allocation, guardrail enforcement)
+- ✅ `/api/demo/reset` (session + inventory reset, rate limited)
+- ✅ `/api/ws` proxies to `InventoryGuard` for session-level WebSocket streams
 
 ---
 
@@ -60,20 +69,17 @@ GET /api/auth/me
   Purpose: Validate session, get expiration
 ```
 
-### 2.2 Data/Inventory Endpoints
+### 2.2 Inventory Snapshot Endpoint
 
 ```
-GET /api/data/inventory
+GET /api/demo/state
   Request: Authorization: Bearer <sessionId>
-  Response: ApiResponse<InventoryItem[]>
+  Response: ApiResponse<D1InventoryRow[]>
   Rate Limit: 30/min per session
-  Purpose: Fetch current inventory state
-
-GET /api/data/inventory/:skuId
-  Request: Authorization: Bearer <sessionId>
-  Response: ApiResponse<InventoryItem>
-  Rate Limit: 60/min per session
+  Purpose: Fetch the session-specific inventory snapshot stored in D1 so the UI can build the table harmonized with the Durable Object.
 ```
+
+_(Note: There are no `/api/data/inventory` endpoints in the Worker today; `/api/demo/state` is the canonical inventory fetch.)_
 
 ### 2.3 Demo/Allocation Endpoints
 
@@ -83,10 +89,12 @@ POST /api/demo/allocate
   Headers: Authorization: Bearer <sessionId>
   Response: ApiResponse<AllocationPayload>
   Rate Limit:
-    - /min per IP: 10 (admin-protected via rate limiter)
-    - /min per session: 30
-  Guardrails: 0.1% billed fraction hard-enforced
-  Cost Tracking: Logs to Analytics Engine (requestId in meta)
+    - /min per IP: 10 (KV counter)
+    - /min per session: 30 (session key)
+  Guardrails:
+    - `DEMO_COST_LIMIT` env stops any session whose real costs exceed the threshold (default 1.0 for demo, 0.0 in production)
+    - `virtualCosts` window hard-coded to 100 units per session; exceeding it flags `guardrailTriggered` and logs `VIRTUAL_GUARDRAIL_TRIGGERED` via Analytics Engine (meta includes timestamp + `virtualCosts`)
+  Cost Tracking: the DO + KV records `costs` and `virtualCosts` per session; the API responds with `meta.guardrailTriggered` when the virtual window is breached
 
 POST /api/demo/reset
   Request: (empty body)
@@ -99,11 +107,11 @@ POST /api/demo/reset
 ### 2.4 WebSocket Endpoints (Real-time)
 
 ```
-WS /api/ws/room/:roomId
-  Query: ?sessionId=<sessionId>
-  Connection: Kv-backed session validation on upgrade
-  Messages: Event broadcast (contention, revenue, costs)
-  Close Codes: 4001=Invalid Session, 4003=Rate Limited, 4009=Cost Limit
+WS GET /api/ws?sessionId=<sessionId>
+  Upgrade: websocket + sessionId query required
+  Connection: Worker proxies to `InventoryGuard` Durable Object keyed by the session ID so each participant gets the session-specific stream
+  Messages: DO broadcasts allocation deltas (`type: "UPDATE"`) with SKU and allocation metadata
+  Close Codes: None are enforced yet; missing or expired session returns HTTP 400 before the upgrade
 ```
 
 ---
@@ -113,18 +121,17 @@ WS /api/ws/room/:roomId
 ### 3.1 Storage: Cloudflare KV
 
 ```
-Namespace: demo-sessions
+Namespace: demo-sessions (alias `REVENUE_GUARD_KV`)
 
 Key Format: sess-<sessionId>
-TTL: 1200 seconds (20 minutes, per spec expirationTtl)
+TTL: 1200 seconds (20 minutes)
 Value:
 {
   "sessionId": "sess_...",
-  "ipAddress": "203.0.113.42",
-  "createdAt": 1707200000000,
-  "initiatedFrom": "turnstile",
-  "requestsCount": 123,
-  "costsAccumulated": 0.0012345
+  "ip": "203.0.113.42",
+  "expiresAt": 1707200000000,
+  "costs": 0.0,
+  "virtualCosts": 0.0
 }
 ```
 
@@ -132,7 +139,7 @@ Value:
 
 1. **Create**: POST /api/auth/login (Turnstile → KV save)
 2. **Validate**: GET /api/auth/me (KV lookup + TTL check)
-3. **Track**: Each /api/demo/allocate increments requestsCount, updates costsAccumulated
+3. **Track**: Each /api/demo/allocate increments `costs` and `virtualCosts`, writes the new session value back to KV, and records `guardrailTriggered` in the response meta if the virtual window trips
 4. **Expire**: KV TTL auto-deletes after 1200s; client deletes from localStorage
 
 ---
@@ -156,8 +163,8 @@ Rule: Brute-Force Guard (Login)
 
 Rule: Rate Limit (General)
   Path: /api/demo/*
-  Threshold: 100 per minute per IP
-  Action: 429 Too Many Requests
+  Threshold: 10 per minute per IP + 30 per session (enforced via KV counters)
+  Action: 429 Too Many Requests / guardrail alert (>virtual window)
 
 Rule: User-Agent Filter
   Condition: Missing user-agent OR suspicious patterns
@@ -170,53 +177,26 @@ Rule: IP Reputation
 
 ---
 
-## 5. Cost Guardrails (0.1% Billed)
+## 5. Cost Guardrails (DEMO_COST_LIMIT + Virtual Window)
 
-### 5.1 Hard-Lock in Code
+### 5.1 Real Spend Guard: `DEMO_COST_LIMIT`
 
-- **File**: src/hooks/useSimulation.ts
-- **Constant**: `export const BILLING_SCALE = 0.001;` (immutable)
-- **Behavior**: Cannot be overridden by operator or User input
-- **Enforcement**: Server-side duplicate check (mockApi reads BILLING_SCALE from env)
+- **File**: src/worker/index.ts (allocation handler)
+- **Behavior**: `costs` stored on the KV session are incremented by `units * 150 * BILLING_SCALE`. If `costs + totalCost > parseFloat(env.DEMO_COST_LIMIT)`, the request fails with `REAL_BUDGET_EXCEEDED` (HTTP 403) before the Durable Object is touched.
+- **Defaults**: Managed in `wrangler.jsonc` as `1.0` for local + preview, while production overrides it to `0.0` to guarantee zero billable spend.
 
-### 5.2 Per-Session Cost Tracking
+### 5.2 Virtual Budget Window
 
-```typescript
-// On each allocation:
-const costIncrement = unitsAllocated * unitPrice * BILLING_SCALE;
+- **Virtual Unit Price**: Fixed at 150 (per-unit cost for the virtual window).
+- **Implementation**: `virtualCosts` tracked on the KV session is compared against a hard-coded `VIRTUAL_LIMIT = 100`. When the next allocation would push `virtualCosts > 100`, the response still runs but a `guardrailTriggered` flag is set, and Analytics Engine receives a `VIRTUAL_GUARDRAIL_TRIGGERED` event.
+- **Response Meta**: When the virtual guard trips, `meta.guardrailTriggered` is `true` and `meta.virtualCosts` reports the updated total.
 
-// Store in KV session:
-session.costsAccumulated += costIncrement;
+### 5.3 Analytics Engine Export (Guardrail Telemetry)
 
-// Check guardrails:
-if (costsAccumulated > 15.0) {
-  // cost_guard_alert event → Analytics Engine
-  // UI displays warning banner
-}
-if (costsAccumulated > 20.0) {
-  // cost_guard_auto_stop event → Analytics Engine
-  // Return error + kill-switch flag
-  // Client halts demo
-}
-```
-
-### 5.3 Analytics Engine Export
-
-```
-Event: cost_guard_alert
-  - sessionId
-  - ipAddress
-  - costsAccumulated
-  - timestamp
-  - requestId (from meta)
-
-Event: cost_guard_auto_stop
-  - sessionId
-  - ipAddress
-  - costsAccumulated (final)
-  - timestamp
-  - requestId (from meta)
-```
+- **Event**: `VIRTUAL_GUARDRAIL_TRIGGERED`
+  - `blobs`: [`sessionId`, `ip`, `VIRTUAL_GUARDRAIL_TRIGGERED`, `skuId`]
+  - `doubles`: `[virtualCosts, units, latencyMs]`
+  - `indexes`: `[sessionId]`
 
 ---
 
@@ -224,49 +204,50 @@ Event: cost_guard_auto_stop
 
 ### Authentication
 
-- `INVALID_TOKEN`: Token verification failed (Turnstile)
-- `NO_SESSION`: No session token provided
-- `UNAUTHORIZED`: Authorization header missing/invalid
-- `INVALID_SESSION`: SessionId not found in KV
-- `EXPIRED_SESSION`: SessionId TTL exceeded
+- `MISSING_TOKEN`: Turnstile payload missing
+- `INVALID_TOKEN`: Turnstile verification failed
+- `RATE_LIMITED`: Login attempts exceeded (10/min per IP)
+- `UNAUTHORIZED`: Authorization header missing or malformed
+- `INVALID_SESSION`: SessionId not found
+- `EXPIRED_SESSION`: Session timed out or KV expired
 
 ### Allocation
 
-- `OUT_OF_STOCK`: Insufficient units available
-- `INVALID_SKU`: SKU does not exist
-- `OVERBOOKING`: Race condition detected (eventual mode)
-- `COST_LIMIT_REACHED`: 0.1% billed hard-lock triggered
+- `RATE_LIMITED`: Allocation attempted after IP/session quota (10 IP / 30 session)
+- `INVALID_UNITS`: `units` missing, NaN, or otherwise invalid
+- `NEGATIVE_UNITS`: Negative allocation values are rejected
+- `INVALID_SKU`: SKU ID not recognized in inventory
+- `OUT_OF_STOCK`: Inventory exhausted (eventual path when oversell prevented)
+- `REAL_BUDGET_EXCEEDED`: The session already hit `DEMO_COST_LIMIT`
 
 ### System
 
-- `RATE_LIMITED`: Rate limit exceeded (429)
-- `INTERNAL_ERROR`: Unexpected server error (500)
+- `RATE_LIMITED`: Generic catch-all when the KV limiter blocks a path (e.g., `/api/demo/reset`)
+- `INTERNAL_ERROR`: Unexpected errors fallback to 500 with spec envelope
 
 ---
 
 ## 7. Mock vs. Live Transition
 
-### 7.1 Mock Phase (Current)
+### 7.1 Mock Phase (Default offline experience)
 
-- **Behavior**: mockApi.ts handles all logic
-- **Storage**: In-memory state object
-- **Sessions**: In-memory sessions map
-- **Latency**: Simulated (50-500ms per spec)
-- **Compliance**: ✅ Full ApiResponse envelope + error codes
+- **Behavior**: `mockApi.ts` still simulates allocations for demo scenarios or when live endpoints are not reachable
+- **Storage**: In-memory state and local session map
+- **Latency**: Regulated (50-500ms) to mimic network delay
+- **Purpose**: Allows local development and failure recovery when live Worker is unreachable
 
 ### 7.2 Live Phase (Worker Endpoints)
 
-- **Transition**: Replace mockApi calls with fetch(baseUrl + path)
-- **Storage**: Cloudflare KV (sessions) + Durable Objects (inventory, atomic)
-- **Sessions**: KV namespace (demo-sessions)
-- **Latency**: Real (1-50ms typical)
-- **Compliance**: ✅ Same envelope; Turnstile verified at WAF
+- **Behavior**: `apiClient` issues live HTTP requests to `/api/auth`, `/api/demo/*`, and `/api/ws` while mirroring the spec envelope
+- **Storage**: Cloudflare KV + D1 + Durable Objects guarantee atomic inventory and session persistence
+- **Sessions**: Both mock and live sessions are tracked side-by-side so toggling modes preserves context
+- **Latency**: Real (1-50ms) and includes the DO round trip for safe allocations
 
-### 7.3 Mock→Live Toggle (UI)
+### 7.3 Mock↔Live Toggle (UI)
 
-- **Current UI**: `<SimulationControls>` shows "Source: Mock"
-- **Future**: Add toggle to switch between /api/mock/_ and /api/demo/_
-- **Fallback**: If live endpoint fails, fall back to mock
+- **Current UI**: `<SimulationControls>` exposes a toggle named “Mode” to flip between live and mock, storing each session ID separately under `demo-session-id-mock` and `demo-session-id-live`
+- **Strategy**: Logging in hits both APIs in parallel (live + mock) so the client can switch modes without a second login
+- **Fallback**: Live failures surface as `SERVER_OFFLINE`, and the UI can fall back to mock until the Worker is available again
 
 ---
 
@@ -280,26 +261,22 @@ Event: cost_guard_auto_stop
 - [x] Create ApiClient layer with Authorization header
 - [x] Add requestId + timestamp to all responses
 
-### Phase 2: 🟠 PENDING LIVE (Worker)
+### Phase 2: ✅ Live Worker Implementation
 
-- [ ] Create Cloudflare Worker endpoint for /api/auth/login (Turnstile)
-- [ ] Create KV namespace binding (demo-sessions)
-- [ ] Implement KV session storage + TTL (1200s)
-- [ ] Create /api/auth/me endpoint (session validation)
-- [ ] Create /api/demo/allocate endpoint (DO-backed atomicity)
-- [ ] Wire Durable Objects for inventory (atomic ops)
-- [ ] Implement cost tracking (costsAccumulated in KV)
-- [ ] Add WAF rules (rate limit, brute-force, IP reputation)
+- [x] Create Cloudflare Worker endpoints for `/api/auth/login`, `/api/auth/me`, `/api/demo/allocate`, `/api/demo/state`, `/api/demo/reset`
+- [x] Bind KV namespace, D1 database, and `InventoryGuard` Durable Object for atomic inventory
+- [x] Persist sessions + guardrails in KV (`costs`, `virtualCosts`, `guardrailTriggered` meta)
+- [x] Enforce rate limits via KV counters (login 10/min IP, allocate 10/min IP + 30/min session, `/auth/me` 60/min)
+- [x] Emit Analytics Engine telemetry for guardrail breaches and allocation success
+- [x] Apply WAF rule set (brute-force login guard, demo rate limiter, UA filter, IP reputation) to `cfdemo.link`
 
-### Phase 3: 🟢 INTEGRATION (UI ↔ Live)
+### Phase 3: 🔄 UI & Observability Completion
 
-- [ ] Update UI to use apiClient (instead of mockApi directly)
-- [ ] Add login flow (Turnstile gate)
-- [ ] Wire /api/auth/me on app startup
-- [ ] Add session expiration UI (countdown, re-auth hint)
-- [ ] Implement mock→live toggle
-- [ ] Add observability (Logpush → cost_guard_alert/auto_stop events)
-- [ ] Create pre-demo checklist (trigger alert → verify logging)
+- [ ] Finalize `/api/demo/state` integration so live inventory renders in the dashboard
+- [ ] Surface session expiration + guardrail warnings (countdown / auto-stop) in the UI
+- [ ] Harden WebSocket flow (per-session validation, telemetry, graceful close codes)
+- [ ] Complete observability wiring (Logpush / Analytics Engine dashboards for `guardrailTriggered`)
+- [ ] Update knowledge base + runbook docs with the live wiring (this doc is part of that effort)
 
 ---
 
@@ -314,6 +291,11 @@ Event: cost_guard_auto_stop
 - [ ] Verify allocation success envelope: success=true, data (unitsAvailable, totalAllocated, revenueGenerated), meta
 - [ ] Trigger cost_guard_alert at ~$15 billed
 - [ ] Trigger cost_guard_auto_stop at ~$20 billed
+- [ ] Verify requestId in meta is unique per call (for Analytics Engine tracing)
+- [ ] Call GET /api/demo/state with Bearer token → get inventory payload (inventory rows + meta)
+- [ ] Observe rate limits: login (10/min IP), `/auth/me` (60/min session), allocate (30/min session + 10/min IP)
+- [ ] Force virtual guardrail by exceeding 100 virtual units → expect `meta.guardrailTriggered` and AE event `VIRTUAL_GUARDRAIL_TRIGGERED`
+- [ ] Verify `REAL_BUDGET_EXCEEDED` triggers when `costs` surpasses `DEMO_COST_LIMIT`
 - [ ] Verify requestId in meta is unique per call (for Analytics Engine tracing)
 
 ---
@@ -377,13 +359,15 @@ export function App() {
 
 ---
 
-## 11. Deployable Live Endpoint Template (Wrangler Worker)
+## 11. Deployable Live Endpoint Reference
 
-See `worker-endpoint-template.ts` (next file) for: - `POST /api/auth/login` → Turnstile + KV session save
+The implementation in [`src/worker/index.ts`](../../src/worker/index.ts) currently provides the following routes:
 
-- `GET /api/auth/me` → KV session validate
-- `POST /api/demo/allocate` → DO inventory write + cost tracking + guardrail check
-- `POST /api/demo/reset` → DO inventory reset (admin only)
+- `POST /api/auth/login` → Turnstile verification + KV session save
+- `GET /api/auth/me` → Session validation + rate limiting
+- `GET /api/demo/state` → D1 inventory snapshot per session
+- `POST /api/demo/allocate` → Durable Object-backed allocation + guardrails
+- `POST /api/demo/reset` → Inventory & session reset (operator rate limited)
 
 ---
 
@@ -391,11 +375,10 @@ See `worker-endpoint-template.ts` (next file) for: - `POST /api/auth/login` → 
 
 Current state:
 
-1. ✅ Standard response envelope in client + mock (`ApiResponse<T>`)
-2. ✅ ApiClient uses Authorization header and spec envelope (mock paths)
-3. ✅ Mock API updated to spec envelope
-4. 📄 Worker endpoints, KV, DO, and WAF are **documented as templates only**
-5. 🚧 Live `/auth/login`, `/auth/me`, `/demo/allocate`, `/demo/reset` **not implemented yet**
-6. 🚧 KV sessions, cost guardrails, and rate limits **not implemented server-side**
+1. ✅ `ApiResponse<T>` strictly followed across mock, client, and live Worker responses (meta provided on every path)
+2. ✅ Live Worker hosts `/api/auth/*`, `/api/demo/*`, `/api/ws`, KV/D1 stores sessions & inventory, Durable Object handles atomic allocations
+3. ✅ Rate limits enforced via KV counters (login: 10/min IP, `/auth/me`: 60/min session, allocate: 10/min IP + 30/min session, reset: 1/min IP)
+4. ✅ Guardrails (`DEMO_COST_LIMIT`, `virtualCosts`, Analytics Engine events) and `REAL_BUDGET_EXCEEDED` responses match the doc
+5. 🔄 Next steps: surface live inventory/guardrail UI, finalize WS validation, and document telemetry as part of ongoing runbook updates
 
-**Next Step**: Build and deploy the live Worker using `WORKER_ENDPOINT_TEMPLATE.ts`, then wire apiClient live mode to it.
+**Next Step**: Reconcile live Worker telemetry and documentation so the runbooks stay in sync with the deployed Guardrail service.

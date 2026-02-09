@@ -54,14 +54,15 @@ class ApiClient {
     const targetMode = mode || this.getApiMode();
     const key = `demo-session-id-${targetMode}`;
 
-    if (targetMode === this.getApiMode()) {
-      this.sessionId = sessionId;
-    }
-
     if (sessionId) {
       localStorage.setItem(key, sessionId);
     } else {
       localStorage.removeItem(key);
+    }
+
+    // Always update the internal sessionId if it matches the current active mode
+    if (targetMode === this.getApiMode()) {
+      this.sessionId = sessionId;
     }
   }
 
@@ -92,61 +93,68 @@ class ApiClient {
 
     const [liveRes, mockRes] = await Promise.all([livePromise, mockPromise]);
 
-    // Store sessions for both modes
+    // Store sessions for both modes independently
     if (liveRes.success && liveRes.data?.sessionId) {
       this.setSessionToken(liveRes.data.sessionId, "live");
     }
 
     if (mockRes.success && mockRes.data?.sessionId) {
       this.setSessionToken(mockRes.data.sessionId, "mock");
-      mockApi.setSessionId(mockRes.data.sessionId);
+      // Don't call mockApi.setSessionId here, it will be handled by setApiMode or initializeSession
     }
 
+    // Return the response for the mode that was ACTIVE when login was triggered
     return isCurrentlyLive ? liveRes : mockRes;
   }
 
   async logout(): Promise<ApiResponse<void>> {
+    const activeMode = this.getApiMode();
     let response: ApiResponse<void>;
 
-    if (this.isLive()) {
+    if (activeMode === "live") {
       response = await this.request<void>("/auth/logout", {
         method: "POST",
       });
     } else {
-      // Mock logout is sync
       response = { success: true, meta: this.makeLocalMeta() };
     }
 
-    this.setSessionToken(null);
-    mockApi.setSessionId(null);
+    // Clear session for the current mode
+    this.setSessionToken(null, activeMode);
+    if (activeMode === "mock") {
+      mockApi.setSessionId(null);
+    }
+
     return response;
   }
 
-  async getCurrentSession(): Promise<SessionResponse> {
-    if (!this.sessionId) {
+  async getCurrentSession(mode?: "mock" | "live"): Promise<SessionResponse> {
+    const targetMode = mode || this.getApiMode();
+    const key = `demo-session-id-${targetMode}`;
+    const storedSessionId = localStorage.getItem(key);
+
+    if (!storedSessionId) {
       return {
         success: false,
-        error: { code: "NO_SESSION", message: "No active session" },
+        error: {
+          code: "NO_SESSION",
+          message: `No active session for ${targetMode}`,
+        },
         meta: this.makeLocalMeta(),
       };
     }
 
-    if (this.isLive()) {
+    // Update internal pointer if we are querying the active mode
+    if (targetMode === this.getApiMode()) {
+      this.sessionId = storedSessionId;
+    }
+
+    if (targetMode === "live") {
+      // For live, we actually check with the server
       return this.request<SessionPayload>("/auth/me");
     } else {
-      // For mock, simulate async
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            success: true,
-            data: {
-              sessionId: this.sessionId!,
-              expiresAt: Date.now() + 3600000,
-            },
-            meta: this.makeLocalMeta(),
-          });
-        }, 300);
-      });
+      // For mock, we check our mock state
+      return mockApi.validateSession(storedSessionId);
     }
   }
 

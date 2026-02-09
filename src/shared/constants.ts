@@ -1,0 +1,5 @@
+export const BUSINESS_RULES = {
+  PRICE_PER_UNIT: 150,
+  DEFAULT_STOCK: 1000,
+  MAX_UNITS_PER_TRANSACTION: 50,
+} as const;

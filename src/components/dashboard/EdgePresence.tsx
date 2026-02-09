@@ -28,39 +28,48 @@ export const EdgePresence = ({ mode }: { mode: SimulationMode }) => {
         </div>
 
         <div className="relative h-32 bg-muted/30 rounded-lg border border-border/50 p-4 flex flex-col overflow-hidden">
-          {/* Tier 1: Distance/Latency Labels (Moving with Layout) */}
-          <div className="h-1/2 relative flex items-center justify-center pointer-events-none">
+          {/* Tier 1: Distance/Latency Labels (Aligned with Track) */}
+          <div className="h-1/2 flex items-start pt-1 relative gap-4 px-2 pointer-events-none">
+            {/* Spacer to match LHR Icon width */}
+            <div className="w-12 shrink-0" />
+
+            {/* Label Container - Mirrors Track Width */}
             <motion.div
               layout
-              className="z-30 flex flex-col items-center gap-0.5 bg-background/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-border shadow-sm min-w-[140px]"
-              animate={{
-                x: mode === "eventual" ? 0 : -80,
-              }}
+              className={cn(
+                "relative flex items-center justify-center",
+                mode === "eventual" ? "flex-1" : "w-12",
+              )}
               transition={{ type: "spring", stiffness: 100, damping: 20 }}
             >
-              <AnimatePresence mode="wait">
-                <motion.span
-                  key={mode}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  className={cn(
-                    "text-[10px] font-mono font-bold leading-none",
-                    mode === "eventual"
-                      ? "text-[var(--color-status-alert)]"
-                      : "text-[var(--color-status-success)]",
-                  )}
-                >
+              <motion.div
+                layout
+                className="z-30 flex flex-col items-center gap-0.5 bg-background/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-border shadow-sm min-w-[140px]"
+              >
+                <AnimatePresence mode="wait">
+                  <motion.span
+                    key={mode}
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className={cn(
+                      "text-[10px] font-mono font-bold leading-none",
+                      mode === "eventual"
+                        ? "text-[var(--color-status-alert)]"
+                        : "text-[var(--color-status-success)]",
+                    )}
+                  >
+                    {mode === "eventual"
+                      ? "11,200 KM / 7,000 MI"
+                      : "30 KM / 18 MI"}
+                  </motion.span>
+                </AnimatePresence>
+                <span className="text-[7px] font-bold uppercase text-muted-foreground whitespace-nowrap leading-none mt-1">
                   {mode === "eventual"
-                    ? "11,200 KM / 7,000 MI"
-                    : "30 KM / 18 MI"}
-                </motion.span>
-              </AnimatePresence>
-              <span className="text-[7px] font-bold uppercase text-muted-foreground whitespace-nowrap leading-none mt-1">
-                {mode === "eventual"
-                  ? "Total Round-Trip Journey"
-                  : "Local Edge Round-Trip"}
-              </span>
+                    ? "Total Round-Trip Journey"
+                    : "Local Edge Round-Trip"}
+                </span>
+              </motion.div>
             </motion.div>
           </div>
 

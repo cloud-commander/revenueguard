@@ -20,6 +20,13 @@
 **[READING_GUIDE.md](READING_GUIDE.md)**  
 → Quick start guide for: Engineering Lead, Product, Security, DevOps, Frontend, Backend
 
+### 🏗️ Tech Stack & Architecture (NEW!)
+
+**[docs/knowledge-base/CLOUDFLARE_TECH_STACK.md](../knowledge-base/CLOUDFLARE_TECH_STACK.md)** ⭐ **FOR ENGINEERS**  
+→ Complete Cloudflare service inventory, integration patterns, best practices  
+→ Configuration reference, performance analysis, cost breakdown  
+→ Read time: 40 minutes | Audience: All technical roles | **[Quick Index](../knowledge-base/README.md)**
+
 ### 📋 Technical Design
 
 **[revenue-guard.md](revenue-guard.md)**  
@@ -131,8 +138,9 @@ Action: Create Cloudflare account (Feb 5)
 ```
 Read in order:
 1. IMPLEMENTATION_PLAN.md (Phase 0) ← UI validation
-2. CRITICAL_GAPS_FIXES.md (Gap #9)
-3. READING_GUIDE.md (Frontend section)
+2. docs/knowledge-base/CLOUDFLARE_TECH_STACK.md (Pages & Workers sections)
+3. CRITICAL_GAPS_FIXES.md (Gap #9)
+4. READING_GUIDE.md (Frontend section)
 
 Action: Start Vite + React (Feb 5)
 ```
@@ -141,11 +149,13 @@ Action: Start Vite + React (Feb 5)
 
 ```
 Read in order:
-1. IMPLEMENTATION_PLAN.md (Phase 1) ← Backend core
-2. CRITICAL_GAPS_FIXES.md (Gaps #1, #6, #9)
-3. OPERATIONAL_RUNBOOK.md (Diagnostic hints)
+1. docs/knowledge-base/CLOUDFLARE_TECH_STACK.md ← CRITICAL (40 min)
+   → Workers, Durable Objects, D1, KV deep dives
+2. IMPLEMENTATION_PLAN.md (Phase 1) ← Backend core
+3. CRITICAL_GAPS_FIXES.md (Gaps #1, #6, #9)
+4. OPERATIONAL_RUNBOOK.md (Diagnostic hints)
 
-Action: Review rate limiting (Feb 5)
+Action: Review rate limiting + check integration patterns (Feb 5)
 ```
 
 ---

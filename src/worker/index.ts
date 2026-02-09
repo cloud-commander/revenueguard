@@ -1,4 +1,5 @@
-/// <reference types="@cloudflare/workers-types" />
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { InventoryGuard } from "./InventoryGuard";
 
 export interface Env {
@@ -42,104 +43,49 @@ async function getSession(env: Env, sessionId: string) {
   }
 }
 
-export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
-    const reqId = genReqId();
+const app = new Hono<{ Bindings: Env }>();
 
-    // CORS headers
-    const origin = request.headers.get("Origin");
-    const ALLOWED_ORIGINS = [
-      "http://localhost:5173",
-      "https://revenue-guard.cfdemo.link",
-      "https://cf-peakpass.pages.dev",
-    ];
-
-    const isAllowed =
-      origin &&
-      (ALLOWED_ORIGINS.includes(origin) ||
-        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin));
-
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS[0],
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-    };
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
-
-    try {
-      console.log(
-        `[REQUEST] id=${reqId} method=${request.method} path=${path}`,
-      );
-      if (path === "/api/auth/login")
-        return await handleLogin(request, env, reqId, corsHeaders);
-      if (path === "/api/auth/me")
-        return await handleAuthMe(request, env, reqId, corsHeaders);
-      if (path === "/api/demo/state")
-        return await handleState(request, env, reqId, corsHeaders);
-      if (path === "/api/demo/allocate")
-        return await handleAllocate(request, env, ctx, reqId, corsHeaders);
-      if (path === "/api/demo/reset")
-        return await handleReset(request, env, ctx, reqId, corsHeaders);
-      if (path === "/api/auth/logout")
-        return await handleLogout(request, env, reqId, corsHeaders);
-
-      // Fallback to static assets
-      if (!path.startsWith("/api")) {
-        return await env.ASSETS.fetch(request);
+app.use(
+  "/api/*",
+  cors({
+    origin: (origin) => {
+      const allowed = [
+        "http://localhost:5173",
+        "https://revenue-guard.cfdemo.link",
+        "https://cf-peakpass.pages.dev",
+      ];
+      if (
+        allowed.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        return origin;
       }
+      return allowed[0];
+    },
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "Upgrade"],
+    maxAge: 86400,
+  }),
+);
 
-      return new Response("Not Found", { status: 404, headers: corsHeaders });
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: { code: "SERVER_ERROR", message: errorMessage },
-          meta: { requestId: reqId, timestamp: Date.now() },
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-  },
-};
+app.post("/api/auth/login", async (c) => {
+  const reqId = genReqId();
+  const { turnstileToken } = await c.req.json<{ turnstileToken: string }>();
+  const ip = c.req.header("cf-connecting-ip") || "0.0.0.0";
 
-async function handleLogin(
-  request: Request,
-  env: Env,
-  reqId: string,
-  headers: Record<string, string>,
-) {
-  const { turnstileToken } = (await request.json()) as {
-    turnstileToken: string;
-  };
-  const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
-
-  // Real Turnstile Verification
   if (!turnstileToken) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "MISSING_TOKEN", message: "Missing token" },
-      }),
-      { status: 400, headers },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      400,
     );
   }
 
   const formData = new FormData();
-  formData.append("secret", env.TURNSTILE_SECRET);
+  formData.append("secret", c.env.TURNSTILE_SECRET);
   formData.append("response", turnstileToken);
   formData.append("remoteip", ip);
 
@@ -158,33 +104,35 @@ async function handleLogin(
 
   if (
     !outcome.success &&
-    !(isDebugToken && env.TURNSTILE_SECRET === "DEBUG_TOKEN")
+    !(isDebugToken && c.env.TURNSTILE_SECRET === "DEBUG_TOKEN")
   ) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: {
           code: "INVALID_TOKEN",
           message: "Turnstile verification failed",
         },
-      }),
-      { status: 403, headers },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      403,
     );
   }
 
   // Rate Limiting (10/min per IP for login)
   const loginRlKey = `rl:login:${ip}`;
-  const loginCount = (await env.REVENUE_GUARD_KV.get(loginRlKey)) || "0";
+  const loginCount = (await c.env.REVENUE_GUARD_KV.get(loginRlKey)) || "0";
   if (parseInt(loginCount) >= 10) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "RATE_LIMITED", message: "Too many login attempts" },
-      }),
-      { status: 429, headers },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      429,
     );
   }
-  await env.REVENUE_GUARD_KV.put(
+  await c.env.REVENUE_GUARD_KV.put(
     loginRlKey,
     (parseInt(loginCount) + 1).toString(),
     { expirationTtl: 60 },
@@ -193,7 +141,7 @@ async function handleLogin(
   const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const expiresAt = Date.now() + 20 * 60 * 1000;
 
-  await env.REVENUE_GUARD_KV.put(
+  await c.env.REVENUE_GUARD_KV.put(
     sessionId,
     JSON.stringify({ sessionId, ip, expiresAt, costs: 0, virtualCosts: 0 }),
     { expirationTtl: 1200 },
@@ -209,238 +157,265 @@ async function handleLogin(
   ];
 
   const batch = SKUS.map((sku) =>
-    env.REVENUE_GUARD_DB.prepare(
+    c.env.REVENUE_GUARD_DB.prepare(
       "INSERT INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     ).bind(sessionId, sku.id, sku.stock, sku.price, Date.now()),
   );
-  await env.REVENUE_GUARD_DB.batch(batch);
+  await c.env.REVENUE_GUARD_DB.batch(batch);
 
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: { sessionId, expiresAt, ipAddress: ip },
-      meta: { requestId: reqId, timestamp: Date.now() },
-    }),
-    { headers: { ...headers, "Content-Type": "application/json" } },
-  );
-}
+  return c.json({
+    success: true,
+    data: { sessionId, expiresAt, ipAddress: ip },
+    meta: { requestId: reqId, timestamp: Date.now() },
+  });
+});
 
-async function handleAuthMe(
-  request: Request,
-  env: Env,
-  reqId: string,
-  headers: Record<string, string>,
-) {
-  const auth = request.headers.get("Authorization")?.split(" ")[1];
+app.get("/api/auth/me", async (c) => {
+  const reqId = genReqId();
+  const auth = c.req.header("Authorization")?.split(" ")[1];
+
   if (!auth) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: {
           code: "UNAUTHORIZED",
           message: "Missing or invalid Authorization header",
         },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 401,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      401,
     );
   }
 
-  const session = await getSession(env, auth);
+  const session = await getSession(c.env, auth);
   if (!session) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: {
           code: "EXPIRED_SESSION",
           message: "Session not found or expired",
         },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 401,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      401,
     );
   }
 
-  // Validate TTL
   if (session.expiresAt && Date.now() > session.expiresAt) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "EXPIRED_SESSION", message: "Session has expired" },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 401,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      401,
     );
   }
 
-  // Rate Limiting (60/min per session for /me)
   const meRlKey = `rl:me:${auth}`;
-  const meCount = (await env.REVENUE_GUARD_KV.get(meRlKey)) || "0";
+  const meCount = (await c.env.REVENUE_GUARD_KV.get(meRlKey)) || "0";
   if (parseInt(meCount) >= 60) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "RATE_LIMITED", message: "Too many requests" },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      { status: 429, headers },
+      },
+      429,
     );
   }
-  await env.REVENUE_GUARD_KV.put(meRlKey, (parseInt(meCount) + 1).toString(), {
-    expirationTtl: 60,
-  });
-
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: {
-        sessionId: session.sessionId,
-        expiresAt: session.expiresAt,
-        ipAddress: session.ip,
-      },
-      meta: { requestId: reqId, timestamp: Date.now() },
-    }),
-    { headers: { ...headers, "Content-Type": "application/json" } },
+  await c.env.REVENUE_GUARD_KV.put(
+    meRlKey,
+    (parseInt(meCount) + 1).toString(),
+    { expirationTtl: 60 },
   );
-}
 
-async function handleState(
-  request: Request,
-  env: Env,
-  reqId: string,
-  headers: Record<string, string>,
-) {
-  const auth = request.headers.get("Authorization")?.split(" ")[1];
+  return c.json({
+    success: true,
+    data: {
+      sessionId: session.sessionId,
+      expiresAt: session.expiresAt,
+      ipAddress: session.ip,
+    },
+    meta: { requestId: reqId, timestamp: Date.now() },
+  });
+});
+
+app.get("/api/demo/state", async (c) => {
+  const reqId = genReqId();
+  const auth = c.req.header("Authorization")?.split(" ")[1];
+
   if (!auth) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Missing session" },
-      }),
-      { status: 401, headers },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      401,
     );
   }
 
-  const { results } = await env.REVENUE_GUARD_DB.prepare(
+  const session = await getSession(c.env, auth);
+  if (!session) {
+    return c.json(
+      {
+        success: false,
+        error: { code: "INVALID_SESSION", message: "Session expired" },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      401,
+    );
+  }
+
+  const { results } = await c.env.REVENUE_GUARD_DB.prepare(
     "SELECT * FROM inventory WHERE session_id = ?",
   )
     .bind(auth)
     .all();
 
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: results,
-      meta: { requestId: reqId, timestamp: Date.now() },
-    }),
-    { headers: { ...headers, "Content-Type": "application/json" } },
-  );
-}
+  return c.json({
+    success: true,
+    data: results,
+    meta: { requestId: reqId, timestamp: Date.now() },
+  });
+});
 
-async function handleAllocate(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  reqId: string,
-  headers: Record<string, string>,
-) {
+app.post("/api/demo/allocate", async (c) => {
   const start = Date.now();
-  const body = (await request.json()) as {
+  const reqId = genReqId();
+  const body = await c.req.json<{
     skuId: string;
     mode: string;
     units: number;
-  };
-  const auth = request.headers.get("Authorization")?.split(" ")[1];
+  }>();
+  const auth = c.req.header("Authorization")?.split(" ")[1];
+  const ip = c.req.header("cf-connecting-ip") || "0.0.0.0";
+  const makeMeta = () => ({ requestId: reqId, timestamp: Date.now() });
 
-  if (!auth)
-    return new Response(
-      JSON.stringify({
+  if (!auth) {
+    return c.json(
+      {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Missing session" },
-      }),
-      { status: 401, headers },
+        meta: makeMeta(),
+      },
+      401,
     );
+  }
 
-  const session = await getSession(env, auth);
-  if (!session)
-    return new Response(
-      JSON.stringify({
+  const session = await getSession(c.env, auth);
+  if (!session) {
+    return c.json(
+      {
         success: false,
         error: { code: "INVALID_SESSION", message: "Session expired" },
-      }),
-      { status: 401, headers },
+        meta: makeMeta(),
+      },
+      401,
     );
+  }
 
-  // Rate Limiting (120/min per session for allocation to handle 2s ticker + burst)
-  const rateLimitKey = `rl:alloc:${auth}`;
-  const rateLimitCount = (await env.REVENUE_GUARD_KV.get(rateLimitKey)) || "0";
-  if (parseInt(rateLimitCount) >= 120) {
-    return new Response(
-      JSON.stringify({
+  const sessionRateLimitKey = `rl:alloc:${auth}`;
+  const ipRateLimitKey = `rl:alloc:ip:${ip}`;
+  const [sessionRateCountRaw, ipRateCountRaw] = await Promise.all([
+    c.env.REVENUE_GUARD_KV.get(sessionRateLimitKey),
+    c.env.REVENUE_GUARD_KV.get(ipRateLimitKey),
+  ]);
+  const sessionRateCount = parseInt(sessionRateCountRaw || "0", 10);
+  const ipRateCount = parseInt(ipRateCountRaw || "0", 10);
+  if (ipRateCount >= 10 || sessionRateCount >= 30) {
+    const reason = ipRateCount >= 10 ? "IP" : "session";
+    return c.json(
+      {
         success: false,
         error: {
           code: "RATE_LIMITED",
-          message:
-            "Too many allocation requests (120/min limit reached). Simulation slowed.",
+          message: `Too many allocation requests (${reason} limit reached).`,
         },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 429,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      429,
     );
   }
-  // Increment and expire after 60s
-  ctx.waitUntil(
-    env.REVENUE_GUARD_KV.put(
-      rateLimitKey,
-      (parseInt(rateLimitCount) + 1).toString(),
-      { expirationTtl: 60 },
-    ),
+  c.executionCtx.waitUntil(
+    Promise.all([
+      c.env.REVENUE_GUARD_KV.put(
+        sessionRateLimitKey,
+        (sessionRateCount + 1).toString(),
+        { expirationTtl: 60 },
+      ),
+      c.env.REVENUE_GUARD_KV.put(ipRateLimitKey, (ipRateCount + 1).toString(), {
+        expirationTtl: 60,
+      }),
+    ]),
   );
 
-  const units = body.units || 1;
-  const costPerUnit = 150 * parseFloat(env.BILLING_SCALE);
+  if (typeof body.units !== "number" || isNaN(body.units)) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "INVALID_UNITS",
+          message: "Units must be a valid number",
+        },
+        meta: makeMeta(),
+      },
+      400,
+    );
+  }
+
+  if (body.units < 0) {
+    return c.json(
+      {
+        success: false,
+        error: { code: "NEGATIVE_UNITS", message: "Units cannot be negative" },
+        meta: makeMeta(),
+      },
+      400,
+    );
+  }
+
+  if (!body.skuId || typeof body.skuId !== "string") {
+    return c.json(
+      {
+        success: false,
+        error: { code: "INVALID_SKU", message: "Missing or invalid SKU ID" },
+        meta: makeMeta(),
+      },
+      400,
+    );
+  }
+
+  const units = Math.floor(body.units);
+  const costPerUnit = 150 * parseFloat(c.env.BILLING_SCALE);
   const totalCost = units * costPerUnit;
 
   const virtualUnitPrice = 150;
   const virtualCost = units * virtualUnitPrice;
   const currentVirtualCosts = session.virtualCosts || 0;
 
-  // Real Hard Safety: Zero-Tolerance for actual billing
-  if (session.costs + totalCost > parseFloat(env.DEMO_COST_LIMIT)) {
-    return new Response(
-      JSON.stringify({
+  if (session.costs + totalCost > parseFloat(c.env.DEMO_COST_LIMIT)) {
+    return c.json(
+      {
         success: false,
         error: {
           code: "REAL_BUDGET_EXCEEDED",
           message: "Safety bypass triggered. Actual billing limit reached.",
         },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 403,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      403,
     );
   }
 
-  // Virtual Demo Limit: The "Wow" moment
   const VIRTUAL_LIMIT = 100;
   let guardrailTriggered = false;
   if (currentVirtualCosts + virtualCost > VIRTUAL_LIMIT) {
     guardrailTriggered = true;
-    env.REVENUE_GUARD_AE.writeDataPoint({
+    c.env.REVENUE_GUARD_AE.writeDataPoint({
       blobs: [auth as string, session.ip, "VIRTUAL_GUARDRAIL_TRIGGERED"],
       doubles: [currentVirtualCosts + virtualCost],
       indexes: [auth as string],
@@ -448,53 +423,48 @@ async function handleAllocate(
   }
 
   if (body.mode === "safe") {
-    // Inventory Sharding removed (Option A: Consolidation)
-    // Using one DO per SKU per session for true atomicity.
-    const shardId = `${auth}-${body.skuId}`;
+    // Inventory Guard DO
+    // CRITICAL FIX: Use SessionID as the DO ID to match the WebSocket connection
+    // This allows the DO to broadcast back to the connected client.
+    const doId = c.env.REVENUE_GUARD_INVENTORY_DO.idFromName(auth);
+    const doStub = c.env.REVENUE_GUARD_INVENTORY_DO.get(doId);
 
-    const doId = env.REVENUE_GUARD_INVENTORY_DO.idFromName(shardId);
-    const doStub = env.REVENUE_GUARD_INVENTORY_DO.get(doId);
+    // Using simple fetch to DO (could be RPC if upgraded)
     const res = await doStub.fetch(
       new Request("http://do/allocate", {
         method: "POST",
         body: JSON.stringify({
           ...body,
           sessionId: auth,
-          billingScale: parseFloat(env.BILLING_SCALE),
+          billingScale: parseFloat(c.env.BILLING_SCALE),
         }),
       }) as unknown as Request,
     );
 
     const data = (await res.json()) as {
       success: boolean;
-      data?: {
-        unitsAvailable: number;
-        totalAllocated: number;
-        revenueGenerated: number;
-      };
-      error?: { code: string; message: string };
+      data?: any;
+      error?: any;
       meta?: Meta;
     };
 
-    // Update session costs in KV
     if (data.success) {
       session.costs += totalCost;
       session.virtualCosts = currentVirtualCosts + virtualCost;
-      await env.REVENUE_GUARD_KV.put(auth, JSON.stringify(session), {
+      await c.env.REVENUE_GUARD_KV.put(auth, JSON.stringify(session), {
         expirationTtl: 1200,
       });
-      ctx.waitUntil(
+      c.executionCtx.waitUntil(
         (async () => {
-          env.REVENUE_GUARD_AE.writeDataPoint({
+          c.env.REVENUE_GUARD_AE.writeDataPoint({
             blobs: [auth, session.ip, "ALLOCATION_SUCCESS_SAFE", body.skuId],
-            doubles: [totalCost, units, Date.now() - start], // totalCost, units, latency
+            doubles: [totalCost, units, Date.now() - start],
             indexes: [auth],
           });
         })(),
       );
     }
 
-    // Inject metadata
     data.meta = {
       requestId: reqId,
       timestamp: Date.now(),
@@ -502,13 +472,10 @@ async function handleAllocate(
       virtualCosts: session.virtualCosts,
     };
 
-    return new Response(JSON.stringify(data), {
-      headers: { ...headers, "Content-Type": "application/json" },
-    });
+    return c.json(data, res.status as any);
   } else {
-    // Eventual Consistency (D1 Race Condition)
-    // 1. Read
-    const inv = (await env.REVENUE_GUARD_DB.prepare(
+    // Eventual Consistency
+    const inv = (await c.env.REVENUE_GUARD_DB.prepare(
       "SELECT * FROM inventory WHERE session_id = ? AND sku_id = ?",
     )
       .bind(auth, body.skuId)
@@ -517,167 +484,206 @@ async function handleAllocate(
       allocated: number;
       total_stock: number;
     } | null;
-    if (!inv)
-      return new Response(
-        JSON.stringify({
+
+    if (!inv) {
+      return c.json(
+        {
           success: false,
           error: { code: "INVALID_SKU", message: "SKU not found" },
-        }),
-        { status: 400, headers },
+        },
+        400,
       );
+    }
 
-    // 2. Simulate Latency Change
     await new Promise((r) => setTimeout(r, 100));
 
-    // 3. Write
     const oversold = inv.allocated + body.units > inv.total_stock;
     const oversellDelta = oversold
       ? inv.allocated + body.units - inv.total_stock
       : 0;
 
     if (inv.allocated < inv.total_stock || oversold) {
-      // Allow "oversell" for demo purposes in eventual mode
-      await env.REVENUE_GUARD_DB.prepare(
+      await c.env.REVENUE_GUARD_DB.prepare(
         "UPDATE inventory SET allocated = allocated + ?, updated_at = ? WHERE session_id = ? AND sku_id = ?",
       )
         .bind(body.units, Date.now(), auth, body.skuId)
         .run();
 
-      // Update session costs in KV
       session.costs += totalCost;
       session.virtualCosts = currentVirtualCosts + virtualCost;
-      await env.REVENUE_GUARD_KV.put(auth, JSON.stringify(session), {
+      await c.env.REVENUE_GUARD_KV.put(auth, JSON.stringify(session), {
         expirationTtl: 1200,
       });
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          data: {
-            unitsAvailable: Math.max(
-              0,
-              inv.total_stock - (inv.allocated + body.units),
-            ),
-            totalAllocated: inv.allocated + body.units,
-            revenueGenerated: totalCost,
-            oversellDelta,
-          },
-          meta: {
-            requestId: reqId,
-            timestamp: Date.now(),
-            guardrailTriggered,
-            virtualCosts: session.virtualCosts,
-          },
-        }),
-        { headers: { ...headers, "Content-Type": "application/json" } },
-      );
+      return c.json({
+        success: true,
+        data: {
+          unitsAvailable: Math.max(
+            0,
+            inv.total_stock - (inv.allocated + body.units),
+          ),
+          totalAllocated: inv.allocated + body.units,
+          revenueGenerated: totalCost,
+          oversellDelta,
+        },
+        meta: {
+          requestId: reqId,
+          timestamp: Date.now(),
+          guardrailTriggered,
+          virtualCosts: session.virtualCosts,
+        },
+      });
     } else {
-      return new Response(
-        JSON.stringify({
+      return c.json(
+        {
           success: false,
           error: { code: "OUT_OF_STOCK", message: "Insufficient stock" },
           meta: { requestId: reqId, timestamp: Date.now() },
-        }),
-        {
-          status: 400,
-          headers: { ...headers, "Content-Type": "application/json" },
         },
+        400,
       );
     }
   }
-}
+});
 
-async function handleReset(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  reqId: string,
-  headers: Record<string, string>,
-) {
-  const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
+app.post("/api/demo/reset", async (c) => {
+  const reqId = genReqId();
+  const ip = c.req.header("cf-connecting-ip") || "0.0.0.0";
   const rateLimitKey = `rl_reset_${ip}`;
 
-  // Rate Limit: 1 reset per minute per IP
-  const lastReset = await env.REVENUE_GUARD_KV.get(rateLimitKey);
+  const lastReset = await c.env.REVENUE_GUARD_KV.get(rateLimitKey);
   if (lastReset) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: {
           code: "RATE_LIMITED",
           message: "Reset limited to once per minute.",
         },
         meta: { requestId: reqId, timestamp: Date.now() },
-      }),
-      {
-        status: 429,
-        headers: { ...headers, "Content-Type": "application/json" },
       },
+      429,
     );
   }
 
-  await env.REVENUE_GUARD_KV.put(rateLimitKey, "true", { expirationTtl: 60 });
+  await c.env.REVENUE_GUARD_KV.put(rateLimitKey, "true", { expirationTtl: 60 });
 
-  console.log(`[RESETEVENT] id=${reqId} ip=${ip}`);
-
-  const auth = request.headers.get("Authorization")?.split(" ")[1];
+  const auth = c.req.header("Authorization")?.split(" ")[1];
   if (!auth) {
-    return new Response(
-      JSON.stringify({
+    return c.json(
+      {
         success: false,
         error: { code: "UNAUTHORIZED", message: "Missing session" },
-      }),
-      { status: 401, headers },
+        meta: { requestId: reqId, timestamp: Date.now() },
+      },
+      401,
     );
   }
 
-  // Reset D1 for THIS session
-  await env.REVENUE_GUARD_DB.prepare(
+  // Reset session metrics in KV
+  const session = await getSession(c.env, auth);
+  if (session) {
+    session.costs = 0;
+    session.virtualCosts = 0;
+    await c.env.REVENUE_GUARD_KV.put(auth, JSON.stringify(session), {
+      expirationTtl: 1200,
+    });
+  }
+
+  await c.env.REVENUE_GUARD_DB.prepare(
     "UPDATE inventory SET allocated = 0, updated_at = ? WHERE session_id = ?",
   )
     .bind(Date.now(), auth)
     .run();
 
-  // Reset DO Shards for THIS session
-  const SKUS = ["sku-001", "sku-002", "sku-003", "sku-004", "sku-005"];
-  for (const skuId of SKUS) {
-    const shardId = `${auth}-${skuId}`;
-    const doId = env.REVENUE_GUARD_INVENTORY_DO.idFromName(shardId);
-    const doStub = env.REVENUE_GUARD_INVENTORY_DO.get(doId);
-    ctx.waitUntil(
-      doStub.fetch(new Request("http://do/reset", { method: "POST" })),
-    );
-  }
-
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: { success: true },
-      meta: { requestId: reqId, timestamp: Date.now() },
-    }),
-    { headers: { ...headers, "Content-Type": "application/json" } },
+  // Reset the Session DO
+  const doId = c.env.REVENUE_GUARD_INVENTORY_DO.idFromName(auth);
+  const doStub = c.env.REVENUE_GUARD_INVENTORY_DO.get(doId);
+  c.executionCtx.waitUntil(
+    doStub.fetch(new Request("http://do/reset", { method: "POST" })),
   );
-}
 
-async function handleLogout(
-  request: Request,
-  env: Env,
-  reqId: string,
-  headers: Record<string, string>,
-) {
-  const auth = request.headers.get("Authorization")?.split(" ")[1];
+  return c.json({
+    success: true,
+    data: { success: true },
+    meta: { requestId: reqId, timestamp: Date.now() },
+  });
+});
+
+app.post("/api/auth/logout", async (c) => {
+  const reqId = genReqId();
+  const auth = c.req.header("Authorization")?.split(" ")[1];
   if (auth) {
-    await env.REVENUE_GUARD_KV.delete(auth);
+    await c.env.REVENUE_GUARD_KV.delete(auth);
+  }
+  return c.json({
+    success: true,
+    data: { success: true },
+    meta: { requestId: reqId, timestamp: Date.now() },
+  });
+});
+
+app.get("/api/ws", async (c) => {
+  const upgradeHeader = c.req.header("Upgrade");
+  if (!upgradeHeader || upgradeHeader !== "websocket") {
+    return c.text("Expected Upgrade: websocket", 426);
   }
 
-  return new Response(
-    JSON.stringify({
-      success: true,
-      data: { success: true },
-      meta: { requestId: reqId, timestamp: Date.now() },
-    }),
-    { headers: { ...headers, "Content-Type": "application/json" } },
-  );
-}
+  /*
+   * CRITICAL: We need a mapping strategy.
+   * Option A: One Global Room (Multi-tenant chaos)
+   * Option B: One Room Per Session (Isolation)
+   *
+   * Since this is Revenue Guard, we want per-user isolation for the demo.
+   * However, to demonstrate "Multiplayer", we might want a shared room.
+   *
+   * Updated Strategy:
+   * We attach to a "Global Dashboard" DO for generic metrics,
+   * OR we attach to the specific Inventory DO if we want SKU updates.
+   *
+   * For Simplicity & Architecture correctness:
+   * We will connect to a NEW "SessionMonitor" DO or reuse InventoryGuard?
+   *
+   * Let's reuse InventoryGuard. We need to connect to the specific SKU shard?
+   * No, that's too many connections.
+   *
+   * Better Pattern: connecting to a "SessionController" DO that aggregates.
+   *
+   * For this PoC, let's connect to a singleton "Global" InventoryGuard
+   * OR simply allow connecting to the User's Session ID as the DO ID.
+   */
 
+  // Using the Session ID as the DO ID for a "Session Controller" pattern
+  // But wait, InventoryGuard is per SKU in the current logic:
+  // const shardId = `${auth}-${body.skuId}`;
+
+  // To get ALL updates for a session, we need a Session-Level DO.
+  // OR we just connect to one "Aggregator".
+
+  // Let's create a "SessionRoom" DO or just use a specific ID for the WS.
+  // We'll use the SessionID as the generic "Room" for this user.
+
+  /*
+   * REVISION: Using `InventoryGuard` as the WebSocket Target.
+   * But `InventoryGuard` is logically sharded.
+   *
+   * Simplification: The frontend will open ONE WebSocket to `InventoryGuard`
+   * with ID = `session_id`.
+   * This specific DO instance will act as the "Coordinator" for that session.
+   */
+
+  const url = new URL(c.req.url);
+  const sessionId = url.searchParams.get("sessionId");
+
+  if (!sessionId) {
+    return c.text("Missing sessionId", 400);
+  }
+
+  const doId = c.env.REVENUE_GUARD_INVENTORY_DO.idFromName(sessionId);
+  const stub = c.env.REVENUE_GUARD_INVENTORY_DO.get(doId);
+
+  return stub.fetch(c.req.raw);
+});
+
+export default app;
 export { InventoryGuard };

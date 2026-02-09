@@ -40,9 +40,9 @@ Client → allocateSafe(skuId, units) → POST /api/demo/allocate
          ↓
          Session validation (via KV)
          ↓
-         Rate limiting check (KV counter: 200/min per session)
+  Rate limiting check (KV counters: 10/min per IP, 30/min per session)
          ↓
-         Cost guardrails: real_cost + session.costs ≤ DEMO_COST_LIMIT (0.0)
+         Cost guardrails: total_traffic ≤ DEMO_COST_LIMIT (1,000,000 requests)
          ↓
          DO call: InventoryGuard.fetch() → /allocate
          ↓
@@ -270,7 +270,7 @@ Expected response:
   "data": {
     "unitsAvailable": 990,
     "totalAllocated": 10,
-    "revenueGenerated": 0.0000000000015 // 10 * 150 * 0.000000001
+    "revenueGenerated": 0.15 // 10 * 150 * 0.0001
   },
   "meta": {
     "requestId": "req_...",
@@ -298,7 +298,7 @@ Expected response (may oversell):
   "data": {
     "unitsAvailable": 490,
     "totalAllocated": 510,
-    "revenueGenerated": 0.000000000075,
+    "revenueGenerated": 7.5,
     "oversellDelta": 10 // 10 units oversold (race condition)
   },
   "meta": {
@@ -320,7 +320,7 @@ Expected response:
 ```json
 {
   "success": true,
-  "data": { "success": true },
+  "data": { "success": true, "cleared": ["inventory", "session_costs"] },
   "meta": {
     "requestId": "req_...",
     "timestamp": 1704527400000
@@ -349,7 +349,8 @@ Expected response:
 ### Rate Limiting
 
 - **Login**: 10/min per IP
-- **Allocate**: 200/min per session
+- **Allocate (IP)**: 10/min per IP
+- **Allocate (Session)**: 30/min per session
 - **Reset**: 1/min per IP
 - Implemented via KV counters with 60s TTL
 
@@ -366,9 +367,9 @@ Expected response:
 ```jsonc
 {
   "vars": {
-    "BILLING_SCALE": "0.000000001",
-    "DEMO_COST_LIMIT": "0.0",
-    "ALERT_THRESHOLD": "0.0",
+    "BILLING_SCALE": "0.0001",
+    "DEMO_COST_LIMIT": "1000000",
+    "ALERT_THRESHOLD": "500000",
     "TURNSTILE_SECRET": "production_secret_key",
   },
 }

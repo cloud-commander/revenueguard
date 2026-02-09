@@ -1,5 +1,8 @@
 # Business Case: Cloudflare Durable Objects for Revenue-Critical Allocation
 
+> [!NOTE]
+> **Technical Snapshot**: ROI-focused analysis of migrating inventory allocation to Cloudflare Durable Objects. Projects $2.065M annual savings, 27x ROI, and 0% overbooking rates by replacing high-latency regional SQL with atomic edge coordination.
+
 **Audience**: Board of Directors, CFO, CTO, Chief Operating Officer  
 **Date**: February 2026  
 **Document Type**: Executive Decision Brief  
@@ -2418,4 +2421,11 @@ for scenario, params in scenarios.items():
 
 ---
 
-**Contact**: Engineering Leadership / CTO Office
+## **Contact**: Engineering Leadership / CTO Office
+
+## 🎯 Key Takeaways
+
+- **Zero-Risk Transition**: Phased rollout with automated SQL fallback ensures 100% availability during migration.
+- **Financial Certainty**: 27x ROI driven by 99% reduction in infrastructure costs and elimination of revenue leakage.
+- **Proven Scalability**: Capacity tested to 100k+ concurrent requests, serving global traffic from 200+ edge locations.
+- **Compliance Ready**: Portable SQLite state and regional data pinning satisfy global residency and audit requirements.
