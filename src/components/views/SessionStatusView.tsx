@@ -118,14 +118,17 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
         )} req/s until auto-stop`;
 
   return (
-    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+    <section
+      className="space-y-6 animate-in fade-in zoom-in-95 duration-500"
+      aria-label="Session Monitoring"
+    >
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="rounded-2xl border border-border bg-card">
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground">
+            <header className="flex items-center justify-between">
+              <h2 className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground">
                 Session status
-              </p>
+              </h2>
               <span
                 className={cn(
                   "text-[10px] font-semibold uppercase tracking-[0.3em]",
@@ -136,9 +139,9 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
               >
                 {apiMode === "live" ? "Live Worker" : "Mock Engine"}
               </span>
-            </div>
+            </header>
             {session ? (
-              <>
+              <div role="timer" aria-live="polite">
                 <p className="text-2xl font-semibold text-foreground">
                   {apiMode === "mock"
                     ? "Unlimited Duration"
@@ -152,7 +155,7 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
                 <p className="text-[11px] text-muted-foreground">
                   Session ID {session.sessionId.slice(0, 8)}…
                 </p>
-              </>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">
                 Authenticate to keep the live worker session active.
@@ -163,10 +166,10 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
 
         <Card className="rounded-2xl border border-border bg-card">
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground">
+            <header className="flex items-center justify-between">
+              <h2 className="text-[10px] font-mono uppercase tracking-[0.4em] text-muted-foreground">
                 Guardrail
-              </p>
+              </h2>
               <span
                 className={cn(
                   "text-[10px] font-semibold uppercase tracking-[0.3em]",
@@ -179,7 +182,7 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
               >
                 {guardrailStatusLabel}
               </span>
-            </div>
+            </header>
             <p className="text-2xl font-semibold text-foreground">
               {apiMode === "mock"
                 ? "Unlimited"
@@ -190,7 +193,13 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
             <p className="text-[11px] text-muted-foreground">
               {guardrailSubtext}
             </p>
-            <div className="h-1.5 rounded-full bg-border/30 overflow-hidden">
+            <div
+              className="h-1.5 rounded-full bg-border/30 overflow-hidden"
+              role="progressbar"
+              aria-valuenow={apiMode === "mock" ? 0 : guardrailProgress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
               <div
                 className={cn(
                   "h-full transition-all duration-500",
@@ -229,6 +238,6 @@ export const SessionStatusView = ({ state }: SessionStatusViewProps) => {
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };

@@ -131,8 +131,12 @@ export const KnowledgeBase = () => {
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col gap-2 mb-4">
+    <article
+      className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500"
+      role="main"
+      aria-label="Knowledge Base"
+    >
+      <header className="flex flex-col gap-2 mb-4">
         <h1 className="text-2xl font-bold tracking-tight">
           System{" "}
           <span className="text-[var(--color-status-success)]">
@@ -143,17 +147,17 @@ export const KnowledgeBase = () => {
           Deep dive into the architectural concepts, security models, and
           deployment strategies powering this high-concurrency simulation.
         </p>
-      </div>
+      </header>
 
       {/* Desktop View: Tabs */}
-      <div className="hidden lg:block">
+      <section className="hidden lg:block">
         <Tabs defaultValue="fundamentals" className="w-full">
-          <TabsList className="grid w-full grid-cols-7 bg-muted rounded-xl mb-8 h-auto p-1 shadow-sm">
+          <TabsList className="grid w-full grid-cols-4 bg-muted rounded-xl mb-8 h-auto p-1 shadow-sm gap-1">
             {sections.map((s) => (
               <TabsTrigger
                 key={s.value}
                 value={s.value}
-                className="gap-2 rounded-lg py-2.5 px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                className="gap-2 rounded-lg py-2.5 px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs"
               >
                 <s.icon className="w-3.5 h-3.5" />
                 <span>{s.title}</span>
@@ -166,10 +170,10 @@ export const KnowledgeBase = () => {
             </TabsContent>
           ))}
         </Tabs>
-      </div>
+      </section>
 
       {/* Mobile View: Accordion */}
-      <div className="lg:hidden">
+      <section className="lg:hidden">
         <Accordion
           type="single"
           collapsible
@@ -196,7 +200,7 @@ export const KnowledgeBase = () => {
             </AccordionItem>
           ))}
         </Accordion>
-      </div>
-    </div>
+      </section>
+    </article>
   );
 };

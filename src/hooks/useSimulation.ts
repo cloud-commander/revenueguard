@@ -5,14 +5,11 @@ import {
   type AllocationMode,
   type SessionPayload,
   type InventoryItem,
-  type QuotaStatus,
-  type ThrottleLevel,
 } from "@/types";
 import {
   BILLING_SCALE,
   DEFAULT_CONFIG,
   SIMULATION_LIMITS,
-  SIMULATION_CONSTANTS,
   DISABLE_LIVE_ENGINE,
   type SimulationConfig,
 } from "@/config/simulationDefaults";
@@ -21,6 +18,7 @@ import { SimulationEngine } from "@/lib/simulationEngine";
 import { TelemetryGenerator } from "@/lib/telemetryGenerator";
 
 import { useWebSocket } from "./useWebSocket";
+import { useQuota } from "./useQuota";
 
 export type SimulationMode = AllocationMode;
 
@@ -62,8 +60,6 @@ interface SimulationState {
   inventoryLoading: boolean;
   inventoryError: string | null;
   guardrailTriggered: boolean;
-  quotaStatus: QuotaStatus | null;
-  throttleLevel: ThrottleLevel;
 }
 
 const INITIAL_STATE: SimulationState = {
@@ -95,8 +91,6 @@ const INITIAL_STATE: SimulationState = {
   inventoryLoading: false,
   inventoryError: null,
   guardrailTriggered: false,
-  quotaStatus: null,
-  throttleLevel: "normal",
 };
 
 export function useSimulation() {
@@ -107,7 +101,6 @@ export function useSimulation() {
   const stateRef = useRef(INITIAL_STATE);
   const configRef = useRef(DEFAULT_CONFIG);
   const lastRenderRef = useRef<number>(0);
-  const quotaPollIntervalRef = useRef<number | null>(null);
   const inventoryPollIntervalRef = useRef<number | null>(null);
   const lastLiveSyncRef = useRef<number | null>(null);
 
@@ -179,34 +172,6 @@ export function useSimulation() {
         inventoryLoading: false,
         inventoryError: message,
       }));
-    }
-  }, []);
-
-  const pollQuotaStatus = useCallback(async () => {
-    if (stateRef.current.apiMode !== "live") return;
-    try {
-      const response = await simulationApi.getQuotaStatus();
-      if (response.success && response.data) {
-        const quotaData = response.data;
-        stateRef.current = {
-          ...stateRef.current,
-          quotaStatus: quotaData,
-          throttleLevel: quotaData.throttleLevel,
-        };
-        setState((prev) => ({
-          ...prev,
-          quotaStatus: quotaData,
-          throttleLevel: quotaData.throttleLevel,
-        }));
-        // Auto-fallback to mock if critical
-        if (quotaData.throttleLevel === "critical") {
-          console.warn(
-            "[Quota] Critical threshold reached, consider switching to mock mode",
-          );
-        }
-      }
-    } catch (err) {
-      console.error("[Quota] Failed to fetch quota status", err);
     }
   }, []);
 
@@ -374,10 +339,32 @@ export function useSimulation() {
     simulationApi.setApiMode(newMode);
 
     // Swap active session to the one corresponding to the new mode
-    const newSession =
+    let newSession =
       newMode === "live"
         ? stateRef.current.sessionLive
         : stateRef.current.sessionMock;
+
+    // If we don't have a cached session for the new mode, try to fetch it
+    // This handles cases where the Worker was cold/down during initial load but might be up now,
+    // or if the token exists in localStorage but wasn't validated yet.
+    if (!newSession) {
+      try {
+        const response = await simulationApi.getCurrentSession(newMode);
+        if (response.success && response.data) {
+          newSession = response.data;
+          // Update the specific session cache too
+          stateRef.current = {
+            ...stateRef.current,
+            sessionLive:
+              newMode === "live" ? newSession : stateRef.current.sessionLive,
+            sessionMock:
+              newMode === "mock" ? newSession : stateRef.current.sessionMock,
+          };
+        }
+      } catch (e) {
+        console.warn("[Simulation] Failed to recover session for", newMode, e);
+      }
+    }
 
     stateRef.current = {
       ...stateRef.current,
@@ -390,6 +377,11 @@ export function useSimulation() {
       ...prev,
       apiMode: newMode,
       session: newSession,
+      // If we recovered a session, ensure we update the specific cache in state too
+      sessionLive:
+        newMode === "live" && newSession ? newSession : prev.sessionLive,
+      sessionMock:
+        newMode === "mock" && newSession ? newSession : prev.sessionMock,
       isLive: newMode === "live" && !!newSession,
     }));
 
@@ -462,40 +454,6 @@ export function useSimulation() {
     };
     init();
   }, [refreshInventory]);
-
-  // Quota polling effect: poll every 5-10s based on throttle level
-  useEffect(() => {
-    if (stateRef.current.apiMode !== "live" || !stateRef.current.session) {
-      if (quotaPollIntervalRef.current) {
-        clearInterval(quotaPollIntervalRef.current);
-        quotaPollIntervalRef.current = null;
-      }
-      return;
-    }
-
-    // Initial poll on mount
-    pollQuotaStatus();
-
-    // Set up interval based on throttle level
-    const getInterval = () => {
-      const throttle = stateRef.current.throttleLevel;
-      if (throttle === "normal") return 10_000; // 10s
-      if (throttle === "slow") return 5_000; // 5s
-      return 3_000; // 3s for critical
-    };
-
-    quotaPollIntervalRef.current = setInterval(
-      () => pollQuotaStatus(),
-      getInterval(),
-    );
-
-    return () => {
-      if (quotaPollIntervalRef.current) {
-        clearInterval(quotaPollIntervalRef.current);
-        quotaPollIntervalRef.current = null;
-      }
-    };
-  }, [pollQuotaStatus]);
 
   // Inventory polling effect: poll every 2-5s in live mode
   useEffect(() => {
@@ -646,21 +604,6 @@ export function useSimulation() {
         config.chaosLevel,
       );
 
-      // --- CALCULATE ROI ---
-      let savingsDelta = 0;
-      if (current.mode === "safe") {
-        const hypotheticalLatency =
-          SIMULATION_CONSTANTS.LATENCY.GLOBAL_AVG + 50 * config.chaosLevel;
-        const hypotheticalLossFactor =
-          Math.max(0, (hypotheticalLatency - 150) / 1000) * 0.1;
-        const potentialRevenueTick = activeUsers * 0.5;
-        savingsDelta = potentialRevenueTick * hypotheticalLossFactor;
-      }
-
-      const overbookingCostDelta =
-        results.overbookingDelta *
-        SIMULATION_CONSTANTS.COSTS.OVERBOOKING_PENALTY;
-
       // --- TELEMETRY GENERATION ---
       const trimmedTelemetry = TelemetryGenerator.generate(
         stateRef.current.telemetry,
@@ -676,10 +619,13 @@ export function useSimulation() {
         revenuePotential:
           current.revenuePotential + results.revenueDelta + results.lostDelta,
         revenueLost:
-          current.revenueLost + results.lostDelta + overbookingCostDelta,
-        cumulativeSavings: stateRef.current.cumulativeSavings + savingsDelta,
+          current.revenueLost +
+          results.lostDelta +
+          results.overbookingCostDelta,
+        cumulativeSavings:
+          stateRef.current.cumulativeSavings + results.savingsDelta,
         overbookings: current.overbookings + results.overbookingDelta,
-        overbookingCost: current.overbookingCost + overbookingCostDelta,
+        overbookingCost: current.overbookingCost + results.overbookingCostDelta,
         latency: results.latency,
         lockWaitTime: results.lockWaitTime,
         replicaLag: results.replicaLag,
@@ -773,8 +719,15 @@ export function useSimulation() {
     void refreshInventory();
   };
 
+  const { quotaStatus, throttleLevel } = useQuota({
+    apiMode: state.apiMode,
+    hasSession: !!state.session,
+  });
+
   return {
     ...state,
+    quotaStatus,
+    throttleLevel,
     toggleMode,
     toggleLive,
     updateConfig,

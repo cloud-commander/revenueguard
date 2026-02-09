@@ -2,7 +2,7 @@ import {
   type SimulationConfig,
   SIMULATION_CONSTANTS,
 } from "@/config/simulationDefaults";
-import { BUSINESS_RULES } from "@/shared/constants";
+import { calculateVirtualCost } from "@/shared/rules";
 
 /**
  * Pure function to calculate latency, lock wait, and revenue delta based on mode and architecture.
@@ -62,7 +62,7 @@ export const SimulationEngine = {
           const staleFactor =
             (replicaLag / 1000) * (activeUsers / 500) * chaosLevel;
           overbookingDelta = Math.ceil(Math.random() * 15 * staleFactor);
-          lostDelta = overbookingDelta * BUSINESS_RULES.PRICE_PER_UNIT;
+          lostDelta = calculateVirtualCost(overbookingDelta);
         }
       } else if (arch === "sql") {
         // SQL: Aurora/RDS Primary + Read Replicas
@@ -107,7 +107,7 @@ export const SimulationEngine = {
         if (chaosLevel > 1.5 && Math.random() > 0.9) {
           // Rebalancing / Split Brain
           overbookingDelta = Math.ceil(Math.random() * 15);
-          lostDelta = overbookingDelta * BUSINESS_RULES.PRICE_PER_UNIT;
+          lostDelta = calculateVirtualCost(overbookingDelta);
         }
       }
 
@@ -136,6 +136,20 @@ export const SimulationEngine = {
       lostDelta += revenueDelta * 0.3;
     }
 
+    // --- CALCULATE ROI ---
+    let savingsDelta = 0;
+    if (mode === "safe") {
+      const hypotheticalLatency =
+        SIMULATION_CONSTANTS.LATENCY.GLOBAL_AVG + 50 * chaosLevel;
+      const hypotheticalLossFactor =
+        Math.max(0, (hypotheticalLatency - 150) / 1000) * 0.1;
+      const potentialRevenueTick = activeUsers * 0.5;
+      savingsDelta = potentialRevenueTick * hypotheticalLossFactor;
+    }
+
+    const overbookingCostDelta =
+      overbookingDelta * SIMULATION_CONSTANTS.COSTS.OVERBOOKING_PENALTY;
+
     return {
       latency,
       lockWaitTime,
@@ -143,6 +157,8 @@ export const SimulationEngine = {
       revenueDelta,
       lostDelta,
       overbookingDelta,
+      overbookingCostDelta,
+      savingsDelta,
       processed,
     };
   },

@@ -1,62 +1,61 @@
-import { BUSINESS_RULES } from "./constants";
+export const BUSINESS_RULES = {
+  PRICE_PER_UNIT: 150,
+  DEFAULT_STOCK: 100,
+  MAX_UNITS_PER_TRANSACTION: 50,
+} as const;
 
-export interface AllocationValidationResult {
-  isValid: boolean;
-  errorCode?:
-    | "NEGATIVE_UNITS"
-    | "NON_INTEGER_UNITS"
-    | "EXCEEDS_MAX_TRANSACTION"
-    | "OUT_OF_STOCK";
-  message?: string;
+export const VALID_SKUS = [
+  "sku-001",
+  "sku-002",
+  "sku-003",
+  "sku-004",
+  "sku-005",
+] as const;
+
+export function calculateTransactionCost(
+  units: number,
+  billingScale: number,
+): number {
+  return units * BUSINESS_RULES.PRICE_PER_UNIT * billingScale;
+}
+
+export function calculateVirtualCost(units: number): number {
+  return units * BUSINESS_RULES.PRICE_PER_UNIT;
 }
 
 export const InventoryRules = {
-  /**
-   * Validates an allocation request before processing.
-   */
-  validateAllocation: (
-    units: number,
-    availableUnits: number,
-  ): AllocationValidationResult => {
+  validateAllocation: (units: number, availableUnits: number) => {
     if (units <= 0) {
       return {
         isValid: false,
         errorCode: "NEGATIVE_UNITS",
-        message: "Units must be greater than zero.",
+        message: "Units must be > 0",
       };
     }
-
     if (!Number.isInteger(units)) {
       return {
         isValid: false,
         errorCode: "NON_INTEGER_UNITS",
-        message: "Units must be an integer.",
+        message: "Units must be an integer",
       };
     }
-
     if (units > BUSINESS_RULES.MAX_UNITS_PER_TRANSACTION) {
       return {
         isValid: false,
         errorCode: "EXCEEDS_MAX_TRANSACTION",
-        message: `Cannot allocate more than ${BUSINESS_RULES.MAX_UNITS_PER_TRANSACTION} units in a single transaction.`,
+        message: "Exceeds max transaction limit",
       };
     }
-
     if (units > availableUnits) {
       return {
         isValid: false,
-        errorCode: "OUT_OF_STOCK",
-        message: "Insufficient stock.",
+        errorCode: "INSUFFICIENT_STOCK",
+        message: "Insufficient stock",
       };
     }
-
-    return { isValid: true };
+    return { isValid: true, errorCode: "", message: "" };
   },
-
-  /**
-   * Calculates revenue for a given number of units.
-   */
-  calculateRevenue: (units: number, billingScale: number): number => {
+  calculateRevenue: (units: number, billingScale: number = 1.0) => {
     return units * BUSINESS_RULES.PRICE_PER_UNIT * billingScale;
   },
 };

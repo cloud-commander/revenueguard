@@ -22,7 +22,7 @@ describe("Edge Performance & Benchmarking", () => {
     await env.REVENUE_GUARD_DB.prepare(
       "INSERT OR REPLACE INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     )
-      .bind(sessionId, "sku-perf-001", 1000, 150.0, Date.now())
+      .bind(sessionId, "sku-001", 1000, 150.0, Date.now())
       .run();
   });
 
@@ -33,8 +33,9 @@ describe("Edge Performance & Benchmarking", () => {
       headers: {
         "Content-Type": "application/json",
         Authorization: authHeader,
+        "X-Requested-With": "XMLHttpRequest",
       },
-      body: JSON.stringify({ skuId: "sku-perf-001", units: 1, mode: "safe" }),
+      body: JSON.stringify({ skuId: "sku-001", units: 1, mode: "safe" }),
     });
     const end = performance.now();
     const duration = end - start;
@@ -51,9 +52,10 @@ describe("Edge Performance & Benchmarking", () => {
       headers: {
         "Content-Type": "application/json",
         Authorization: authHeader,
+        "X-Requested-With": "XMLHttpRequest",
       },
       body: JSON.stringify({
-        skuId: "sku-perf-001",
+        skuId: "sku-001",
         units: 1,
         mode: "eventual",
       }),

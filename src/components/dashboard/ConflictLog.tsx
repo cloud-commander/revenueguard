@@ -59,6 +59,7 @@ export const ConflictLog = ({
         <AnimatePresence initial={false}>
           {logs.map((log) => (
             <motion.div
+              layout
               key={log.id}
               initial={{ opacity: 0, x: -20, height: 0 }}
               animate={{ opacity: 1, x: 0, height: "auto" }}

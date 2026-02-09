@@ -7,7 +7,7 @@ import type {
   SessionResponse,
 } from "../types";
 import { SCENARIOS, type ScenarioId } from "../config/scenarios";
-import { BUSINESS_RULES } from "../shared/constants";
+import { BUSINESS_RULES } from "../shared/rules";
 
 // State Management
 let currentScenarioId: ScenarioId = "auction";

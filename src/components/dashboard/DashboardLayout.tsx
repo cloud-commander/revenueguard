@@ -150,12 +150,20 @@ export const DashboardLayout = ({
       {/* 2. Main Centre Column */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header (Mobile & Desktop) */}
-        <header className="h-16 shrink-0 border-b border-border flex items-center justify-between px-4 md:px-6 bg-background/80 backdrop-blur-sm z-10 transition-all">
+        <header
+          className="h-16 shrink-0 border-b border-border flex items-center justify-between px-4 md:px-6 bg-background/80 backdrop-blur-sm z-10 transition-all"
+          role="banner"
+        >
           {/* Mobile Nav Trigger */}
           <div className="lg:hidden">
             <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="-ml-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-ml-2"
+                  aria-label="Open Navigation Menu"
+                >
                   <Menu className="w-5 h-5" />
                 </Button>
               </SheetTrigger>

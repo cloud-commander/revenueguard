@@ -22,7 +22,7 @@ describe("Production Hardening (Advanced Edge)", () => {
     await env.REVENUE_GUARD_DB.prepare(
       "INSERT OR REPLACE INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     )
-      .bind(sessionId, "sku-hard-001", 100, 150.0, Date.now())
+      .bind(sessionId, "sku-001", 100, 150.0, Date.now())
       .run();
   });
 
@@ -47,7 +47,7 @@ describe("Production Hardening (Advanced Edge)", () => {
       const updatePromise = new Promise((resolve) => {
         webSocket!.addEventListener("message", (event: MessageEvent) => {
           const data = JSON.parse(event.data as string);
-          if (data.type === "UPDATE" && data.skuId === "sku-hard-001") {
+          if (data.type === "UPDATE" && data.skuId === "sku-001") {
             resolve(data);
           }
         });
@@ -59,8 +59,9 @@ describe("Production Hardening (Advanced Edge)", () => {
         headers: {
           "Content-Type": "application/json",
           Authorization: authHeader,
+          "X-Requested-With": "XMLHttpRequest",
         },
-        body: JSON.stringify({ skuId: "sku-hard-001", units: 1, mode: "safe" }),
+        body: JSON.stringify({ skuId: "sku-001", units: 1, mode: "safe" }),
       });
 
       // 4. Verify update was received
@@ -81,23 +82,21 @@ describe("Production Hardening (Advanced Edge)", () => {
         headers: {
           "Content-Type": "application/json",
           Authorization: authHeader,
+          "X-Requested-With": "XMLHttpRequest",
         },
-        body: JSON.stringify({ skuId: "sku-hard-001", units: 5, mode: "safe" }),
+        body: JSON.stringify({ skuId: "sku-001", units: 5, mode: "safe" }),
       });
 
       // 2. Verify state in DO
-      // Note: In worker.test.ts we used 'sku-001'. Here we use 'sku-hard-001'.
-      // Reset logic might have affected values. Let's check for 5.
       let stateRes = await stub.fetch(
-        `http://do/state?skuId=sku-hard-001&sessionId=${sessionId}`,
+        `http://do/state?skuId=sku-001&sessionId=${sessionId}`,
       );
       let state = (await stateRes.json()) as any;
       expect(state.allocated).toBe(5);
 
       // 3. Verify it survives a fetch re-entry (lazy load check)
-      // Since DO is already awake, we just verify it doesn't drift
       let stateRes2 = await stub.fetch(
-        `http://do/state?skuId=sku-hard-001&sessionId=${sessionId}`,
+        `http://do/state?skuId=sku-001&sessionId=${sessionId}`,
       );
       let state2 = (await stateRes2.json()) as any;
       expect(state2.allocated).toBe(5);
@@ -106,11 +105,6 @@ describe("Production Hardening (Advanced Edge)", () => {
 
   describe("Chaos & Fault Injection", () => {
     it("should handle D1 failures gracefully with 500", async () => {
-      // Vitest pool workers might share the 'env' object.
-      // Instead of mocking the property, let's use a try/catch if it fails.
-      // Actually, let's check if we can simulate a table-not-found or something.
-
-      // Let's try to pass a non-existent session to /allocate eventual which queries D1
       const response = await SELF.fetch(
         "http://example.com/api/demo/allocate",
         {
@@ -118,9 +112,10 @@ describe("Production Hardening (Advanced Edge)", () => {
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer invalid_session",
+            "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({
-            skuId: "sku-hard-001",
+            skuId: "sku-001",
             units: 1,
             mode: "eventual",
           }),

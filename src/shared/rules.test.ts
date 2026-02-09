@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { InventoryRules } from "./rules";
-import { BUSINESS_RULES } from "./constants";
+import { InventoryRules, BUSINESS_RULES } from "./rules";
 
 describe("InventoryRules", () => {
   describe("validateAllocation", () => {

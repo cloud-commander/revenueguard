@@ -82,10 +82,13 @@ export const SimulationControls = ({
   ];
 
   return (
-    <div className="space-y-6">
+    <section className="space-y-6" aria-labelledby="simulation-lab-heading">
       <div className="flex items-center gap-2 px-1 mb-4">
         <Settings2 className="w-4 h-4 text-muted-foreground" />
-        <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">
+        <h3
+          id="simulation-lab-heading"
+          className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground"
+        >
           Simulation Lab
         </h3>
       </div>
@@ -114,26 +117,32 @@ export const SimulationControls = ({
         </TooltipContent>
       </Tooltip>
 
-      {/* Presets */}
-      <div className="grid grid-cols-3 gap-2">
-        {presets.map((preset) => (
-          <Button
-            key={preset.label}
-            variant="outline"
-            onClick={() => handleUpdate(preset.config)}
-            className="h-auto flex-col gap-2 p-3 rounded-xl bg-card border-border hover:border-foreground/20 transition-all hover:bg-muted group"
-          >
-            <preset.icon
-              className={cn(
-                "w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity",
-                preset.color,
-              )}
-            />
-            <span className="text-[10px] font-bold text-muted-foreground group-hover:text-foreground">
-              {preset.label}
-            </span>
-          </Button>
-        ))}
+      {/* Scenario Selector */}
+      <div className="space-y-2 px-1">
+        <div className="flex justify-between items-center text-[10px] font-mono text-muted-foreground">
+          <span>Simulation Scenario</span>
+        </div>
+        <Tabs
+          value={activeScenario}
+          onValueChange={handleScenarioChange}
+          className="w-full"
+        >
+          <TabsList className="w-full bg-muted rounded-lg p-1 gap-1 h-auto grid grid-cols-2">
+            {Object.values(SCENARIOS).map((scenario) => {
+              const Icon = scenario.icon;
+              return (
+                <TabsTrigger
+                  key={scenario.id}
+                  value={scenario.id}
+                  className="flex items-center justify-center gap-2 py-1.5 rounded-md text-[10px] font-bold transition-all data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="">{scenario.name}</span>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
       </div>
 
       {/* Regional Architecture Patterns */}
@@ -193,32 +202,26 @@ export const SimulationControls = ({
         </Tabs>
       </div>
 
-      {/* Scenario Selector */}
-      <div className="space-y-2 px-1">
-        <div className="flex justify-between items-center text-[10px] font-mono text-muted-foreground">
-          <span>Simulation Scenario</span>
-        </div>
-        <Tabs
-          value={activeScenario}
-          onValueChange={handleScenarioChange}
-          className="w-full"
-        >
-          <TabsList className="w-full bg-muted rounded-lg p-1 gap-1 h-auto grid grid-cols-2">
-            {Object.values(SCENARIOS).map((scenario) => {
-              const Icon = scenario.icon;
-              return (
-                <TabsTrigger
-                  key={scenario.id}
-                  value={scenario.id}
-                  className="flex items-center justify-center gap-2 py-1.5 rounded-md text-[10px] font-bold transition-all data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
-                >
-                  <Icon className="w-3 h-3" />
-                  <span className="">{scenario.name}</span>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
+      {/* Presets */}
+      <div className="grid grid-cols-3 gap-2">
+        {presets.map((preset) => (
+          <Button
+            key={preset.label}
+            variant="outline"
+            onClick={() => handleUpdate(preset.config)}
+            className="h-auto flex-col gap-2 p-3 rounded-xl bg-card border-border hover:border-foreground/20 transition-all hover:bg-muted group"
+          >
+            <preset.icon
+              className={cn(
+                "w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity",
+                preset.color,
+              )}
+            />
+            <span className="text-[10px] font-bold text-muted-foreground group-hover:text-foreground">
+              {preset.label}
+            </span>
+          </Button>
+        ))}
       </div>
 
       {/* Sliders */}
@@ -419,6 +422,6 @@ export const SimulationControls = ({
           </Tooltip>
         </div>
       </div>
-    </div>
+    </section>
   );
 };

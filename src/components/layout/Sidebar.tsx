@@ -39,14 +39,15 @@ export const Sidebar = ({
   ];
 
   return (
-    <div
+    <aside
       className={cn(
         "flex flex-col h-full bg-card border-r border-border",
         className,
       )}
+      aria-label="Main Navigation"
     >
       {/* Branding Header */}
-      <div className="p-6 border-b border-border">
+      <header className="p-6 border-b border-border">
         <div className="flex items-center gap-2">
           <div
             className={cn(
@@ -59,13 +60,13 @@ export const Sidebar = ({
             <LayoutDashboard className="w-5 h-5 text-black" />
           </div>
           <div className="flex flex-col leading-none">
-            <span className="font-bold text-lg tracking-tight">Revenue</span>
+            <h1 className="font-bold text-lg tracking-tight">Revenue</h1>
             <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest">
               Guard
             </span>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
@@ -78,6 +79,7 @@ export const Sidebar = ({
             <button
               key={item.id}
               onClick={() => onNavigate(item.id as ViewState)}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                 isActive
@@ -95,7 +97,7 @@ export const Sidebar = ({
       </nav>
 
       {/* Footer / Status Area */}
-      <div className="p-4 border-t border-border bg-muted/20 space-y-4">
+      <footer className="p-4 border-t border-border bg-muted/20 space-y-4">
         {!DISABLE_LIVE_ENGINE && (
           <div className="space-y-2">
             <div className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-wider px-2">
@@ -103,6 +105,7 @@ export const Sidebar = ({
             </div>
             <button
               onClick={onToggleApiMode}
+              aria-label={`Switch to ${apiMode === "live" ? "Mock Engine" : "Live Worker"}`}
               className={cn(
                 "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all border",
                 apiMode === "live"
@@ -146,7 +149,7 @@ export const Sidebar = ({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </footer>
+    </aside>
   );
 };

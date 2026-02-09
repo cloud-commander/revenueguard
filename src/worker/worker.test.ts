@@ -149,7 +149,7 @@ describe("Worker Integration Tests", () => {
 
       expect(response2.status).toBe(400);
       const body2 = (await response2.json()) as any;
-      expect(body2.error.code).toBe("OUT_OF_STOCK");
+      expect(body2.error.code).toBe("INSUFFICIENT_STOCK");
     });
 
     it("Story 3: Should enforce max units per transaction", async () => {

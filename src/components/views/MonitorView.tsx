@@ -230,7 +230,7 @@ export const MonitorView = ({ state }: MonitorViewProps) => {
             replicaLag={state.replicaLag}
           />
           <EdgePresence mode={mode} />
-          <div className="h-[200px]">
+          <div className="h-[400px]">
             <ConflictLog
               mode={mode}
               transactions={transactionsProcessed}

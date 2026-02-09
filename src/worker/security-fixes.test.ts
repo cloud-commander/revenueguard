@@ -24,7 +24,7 @@ describe("Security Fixes Verification", () => {
     await env.REVENUE_GUARD_DB.prepare(
       "INSERT OR REPLACE INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     )
-      .bind(sessionId, "sku-sec-001", 1000, 150, Date.now())
+      .bind(sessionId, "sku-001", 1000, 150, Date.now())
       .run();
   });
 
@@ -112,7 +112,7 @@ describe("Security Fixes Verification", () => {
             "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({
-            skuId: "sku-sec-001",
+            skuId: "sku-001",
             units: 51,
             mode: "safe",
           }),
@@ -138,7 +138,7 @@ describe("Security Fixes Verification", () => {
             "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({
-            skuId: "sku-sec-001",
+            skuId: "sku-001",
             units: 50,
             mode: "safe",
           }),
@@ -211,7 +211,7 @@ describe("Security Fixes Verification", () => {
             // Missing X-Requested-With header
           },
           body: JSON.stringify({
-            skuId: "sku-sec-001",
+            skuId: "sku-001",
             units: 1,
             mode: "safe",
           }),
@@ -237,7 +237,7 @@ describe("Security Fixes Verification", () => {
             "X-Requested-With": "XMLHttpRequest",
           },
           body: JSON.stringify({
-            skuId: "sku-sec-001",
+            skuId: "sku-001",
             units: 1,
             mode: "safe",
           }),
@@ -303,7 +303,7 @@ describe("Security Fixes Verification", () => {
           "X-Requested-With": "XMLHttpRequest",
         },
         body: JSON.stringify({
-          skuId: "sku-sec-001",
+          skuId: "sku-001",
           units: 1,
           mode: "eventual",
         }),

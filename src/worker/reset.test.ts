@@ -22,7 +22,7 @@ describe("Simulation Reset Integrity", () => {
     await env.REVENUE_GUARD_DB.prepare(
       "INSERT OR REPLACE INTO inventory (session_id, sku_id, total_stock, allocated, unit_price, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
     )
-      .bind(sessionId, "sku-reset-001", 100, 150.0, Date.now())
+      .bind(sessionId, "sku-001", 100, 150.0, Date.now())
       .run();
   });
 
@@ -33,8 +33,9 @@ describe("Simulation Reset Integrity", () => {
       headers: {
         "Content-Type": "application/json",
         Authorization: authHeader,
+        "X-Requested-With": "XMLHttpRequest",
       },
-      body: JSON.stringify({ skuId: "sku-reset-001", units: 10, mode: "safe" }),
+      body: JSON.stringify({ skuId: "sku-001", units: 10, mode: "safe" }),
     });
     expect(allocRes.status).toBe(200);
 
@@ -47,7 +48,12 @@ describe("Simulation Reset Integrity", () => {
     // 3. Trigger Reset
     const resetRes = await SELF.fetch("http://example.com/api/demo/reset", {
       method: "POST",
-      headers: { Authorization: authHeader },
+      headers: {
+        Authorization: authHeader,
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
     });
     expect(resetRes.status).toBe(200);
 

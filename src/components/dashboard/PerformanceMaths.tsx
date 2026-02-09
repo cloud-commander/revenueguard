@@ -1,5 +1,6 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Calculator, Cpu, Zap } from "lucide-react";
+import { Calculator, Cpu, Zap, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SCENARIOS } from "@/config/scenarios";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,14 @@ export const PerformanceMaths = ({
   const dosRequired = apiMode === "live" ? 5 : skus;
   const rpsPerDo = totalRps / dosRequired;
   const loadPercentage = (rpsPerDo / RPS_LIMIT_PER_DO) * 100;
+
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(false);
+  }, [simMode, standardArchitecture]);
+
+  if (dismissed) return null;
 
   return (
     <Card className="border-border overflow-hidden">
@@ -171,21 +180,30 @@ export const PerformanceMaths = ({
           </div>
         </div>
 
-        <div className="flex items-start gap-2 bg-blue-500/5 p-3 rounded-xl border border-blue-500/10">
-          <Zap className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
-          <div className="space-y-1">
-            <p className="text-[9px] text-blue-700 dark:text-blue-300 leading-relaxed font-bold uppercase tracking-tighter">
-              {simMode === "safe"
-                ? "Edge-Atomic Processing Active"
-                : "Regional Convergence Active"}
-            </p>
-            <p className="text-[9px] text-blue-700 dark:text-blue-300 leading-relaxed opacity-80">
-              {simMode === "safe"
-                ? "Durable Objects ensure zero race conditions. Runtime scales by sharding high-concurrency hotspots across the global network."
-                : "Requests bypass the Edge-atomic layer to hit a regional infrastructure pattern directly. This demonstrates the standard sync trade-offs shown in logs."}
-            </p>
+        {!dismissed && (
+          <div className="relative flex items-start gap-2 bg-blue-500/5 p-3 rounded-xl border border-blue-500/10 group">
+            <Zap className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
+            <div className="space-y-1 pr-4">
+              <p className="text-[9px] text-blue-700 dark:text-blue-300 leading-relaxed font-bold uppercase tracking-tighter">
+                {simMode === "safe"
+                  ? "Edge-Atomic Processing Active"
+                  : "Regional Convergence Active"}
+              </p>
+              <p className="text-[9px] text-blue-700 dark:text-blue-300 leading-relaxed opacity-80">
+                {simMode === "safe"
+                  ? "Durable Objects ensure zero race conditions. Runtime scales by sharding high-concurrency hotspots across the global network."
+                  : "Requests bypass the Edge-atomic layer to hit a regional infrastructure pattern directly. This demonstrates the standard sync trade-offs shown in logs."}
+              </p>
+            </div>
+            <button
+              onClick={() => setDismissed(true)}
+              className="absolute top-2 right-2 p-1 text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors opacity-0 group-hover:opacity-100"
+              aria-label="Dismiss banner"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );

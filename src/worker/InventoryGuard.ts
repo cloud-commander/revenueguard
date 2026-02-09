@@ -1,13 +1,16 @@
 /// <reference types="@cloudflare/workers-types" />
 import { DurableObject } from "cloudflare:workers";
-import { BUSINESS_RULES, VALID_SKUS } from "../shared/constants";
-import { InventoryRules } from "../shared/rules";
+import {
+  BUSINESS_RULES,
+  VALID_SKUS,
+  calculateTransactionCost,
+  InventoryRules,
+} from "../shared/rules";
 
-interface Env {
-  REVENUE_GUARD_DB: D1Database;
-}
+import type { Env } from "./index";
 
 interface AllocationRequest {
+  requestId?: string; // For idempotency
   sessionId: string;
   skuId: string;
   units: number;
@@ -62,6 +65,7 @@ export class InventoryGuard extends DurableObject<Env> {
   private inventory: Map<string, InventoryState> = new Map();
   private sessionCost: number = 0; // Total cost for this session
   private rateLimiter: RateLimiter; // Session-level rate limiter
+  private processedRequests: Map<string, Response> = new Map(); // Idempotency cache
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
@@ -165,6 +169,25 @@ export class InventoryGuard extends DurableObject<Env> {
   }
 
   async handleAllocate(request: Request): Promise<Response> {
+    const body = (await request.json()) as AllocationRequest;
+    const {
+      requestId,
+      skuId,
+      units,
+      mode,
+      billingScale,
+      sessionId,
+      previousCosts,
+      costLimit,
+    } = body;
+
+    // --- IDEMPOTENCY CHECK ---
+    if (requestId && this.processedRequests.has(requestId)) {
+      const res = this.processedRequests.get(requestId)!.clone();
+      res.headers.set("X-Processed-Id", requestId);
+      return res;
+    }
+
     // 1. ATOMIC RATE LIMIT CHECK
     if (!this.rateLimiter.tryConsume(1)) {
       return new Response(
@@ -179,23 +202,11 @@ export class InventoryGuard extends DurableObject<Env> {
       );
     }
 
-    const body = (await request.json()) as AllocationRequest;
-    const {
-      skuId,
-      units,
-      mode,
-      billingScale,
-      sessionId,
-      previousCosts,
-      costLimit,
-    } = body;
-
     // Sync Budget: Ensure we account for costs incurred in Eventual mode (passed from KV)
     // We take the max of what we know and what the Worker knows.
     this.sessionCost = Math.max(this.sessionCost, previousCosts || 0);
 
-    const costPerUnit = 150 * billingScale;
-    const totalTransactionCost = units * costPerUnit;
+    const totalTransactionCost = calculateTransactionCost(units, billingScale);
 
     // 2. ATOMIC BILLING CHECK
     // Use passed limit or fallback to hardcoded safety net
@@ -275,7 +286,7 @@ export class InventoryGuard extends DurableObject<Env> {
         }),
       );
 
-      return new Response(
+      const response = new Response(
         JSON.stringify({
           success: true,
           data: {
@@ -287,8 +298,23 @@ export class InventoryGuard extends DurableObject<Env> {
             ),
           },
         }),
-        { status: 200 },
+        { status: 200, headers: { "X-Processed-Id": requestId || "none" } },
       );
+
+      // Cache for idempotency if requestId provided
+      if (requestId) {
+        const rid = requestId;
+        this.processedRequests.set(rid, response.clone());
+        // Auto-cleanup after 5 minutes to prevent memory leaks
+        this.ctx.waitUntil(
+          (async () => {
+            await new Promise((resolve) => setTimeout(resolve, 300000));
+            this.processedRequests.delete(rid);
+          })(),
+        );
+      }
+
+      return response;
     } else {
       return new Response(
         "Eventual path should be handled by index.ts directly",
@@ -337,12 +363,17 @@ export class InventoryGuard extends DurableObject<Env> {
   // SECURITY: Atomic billing check for eventual mode to prevent race conditions
   async handleBillingCheck(request: Request): Promise<Response> {
     const body = (await request.json()) as {
+      requestId?: string;
       previousCosts: number;
       transactionCost: number;
       costLimit: number;
       skuId?: string; // Soft check params
       units?: number;
     };
+
+    if (body.requestId && this.processedRequests.has(body.requestId)) {
+      return this.processedRequests.get(body.requestId)!.clone();
+    }
 
     // Sync with latest known costs from KV
     this.sessionCost = Math.max(this.sessionCost, body.previousCosts || 0);
@@ -369,7 +400,7 @@ export class InventoryGuard extends DurableObject<Env> {
           JSON.stringify({
             success: false,
             error: {
-              code: "OUT_OF_STOCK",
+              code: "INSUFFICIENT_STOCK",
               message: "Soft stock check failed (DO memory).",
             },
           }),
@@ -382,7 +413,22 @@ export class InventoryGuard extends DurableObject<Env> {
     this.sessionCost += body.transactionCost;
     this.ctx.waitUntil(this.ctx.storage.put("session_cost", this.sessionCost));
 
-    return new Response(JSON.stringify({ success: true }), { status: 200 });
+    const response = new Response(JSON.stringify({ success: true }), {
+      status: 200,
+    });
+
+    if (body.requestId) {
+      const rid = body.requestId;
+      this.processedRequests.set(rid, response.clone());
+      this.ctx.waitUntil(
+        (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 300000));
+          this.processedRequests.delete(rid);
+        })(),
+      );
+    }
+
+    return response;
   }
 
   // Helper to get inventory with storage fallback and D1 sync

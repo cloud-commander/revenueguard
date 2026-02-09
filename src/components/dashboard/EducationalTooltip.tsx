@@ -112,7 +112,7 @@ export const EducationalTooltip = ({
       aria-describedby={tooltipId}
     >
       <div className="flex items-center gap-1.5 w-full">
-        <div className="flex-1">{childWithA11y}</div>
+        <div className="flex-1 min-w-0">{childWithA11y}</div>
         <button
           onClick={(e) => {
             e.stopPropagation();
